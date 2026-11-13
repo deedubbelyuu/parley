@@ -1,0 +1,17 @@
+{
+  "name": "parley-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parley signaling + chat server (deploy this to Railway)",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.0"
+  }
+}

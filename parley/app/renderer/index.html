@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' ws: wss: http: https:;" />
+  <title>Parley</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ============ SIGN IN ============ -->
+  <div id="login" class="screen login">
+    <form id="loginForm" class="login-card" autocomplete="on">
+      <div class="logo"><span data-icon="logo"></span></div>
+      <h1>Parley</h1>
+      <p class="sub">Video calls and chat with your people.</p>
+      <label id="serverField">Server address
+        <input id="serverUrl" placeholder="https://your-parley.up.railway.app" autocomplete="url" />
+      </label>
+      <label>Your name
+        <input id="displayName" maxlength="32" placeholder="e.g. Daylen" autocomplete="nickname" required />
+      </label>
+      <label>Access code
+        <input id="accessCode" type="password" placeholder="Shared passcode" autocomplete="current-password" />
+      </label>
+      <label class="check"><input id="autoLogin" type="checkbox" checked /> Sign me in automatically</label>
+      <button type="submit" class="btn primary wide" id="loginBtn">Sign in</button>
+      <p id="loginError" class="error" role="alert"></p>
+    </form>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div id="main" class="screen app hidden">
+    <aside class="sidebar">
+      <div class="me">
+        <div class="avatar" id="myAvatar"></div>
+        <div class="me-text">
+          <div class="me-name" id="myName"></div>
+          <div class="me-status" id="myStatus">Online</div>
+        </div>
+        <button class="icon-btn" id="settingsBtn" title="Audio &amp; video settings" data-icon="settings"></button>
+        <button class="icon-btn" id="logoutBtn" title="Sign out" data-icon="logout"></button>
+      </div>
+      <div id="connBanner" class="conn-banner hidden">Reconnecting to server…</div>
+      <input id="search" class="search" placeholder="Search contacts" />
+      <ul id="contacts" class="contacts"></ul>
+      <p class="hint">Friends show up here after they sign in to the same server with the access code.</p>
+    </aside>
+
+    <section class="content">
+      <div id="empty" class="empty">
+        <span data-icon="chat" class="big-icon"></span>
+        <p>Pick someone on the left to chat or call.</p>
+      </div>
+
+      <div id="convo" class="convo hidden">
+        <header class="convo-header">
+          <div class="avatar" id="peerAvatar"></div>
+          <div class="peer-text">
+            <div class="peer-name" id="peerName"></div>
+            <div class="peer-status" id="peerStatus"></div>
+          </div>
+          <div class="spacer"></div>
+          <button class="icon-btn round" id="audioCallBtn" title="Voice call" data-icon="phone"></button>
+          <button class="icon-btn round accent" id="videoCallBtn" title="Video call" data-icon="video"></button>
+        </header>
+
+        <div class="convo-body">
+          <!-- Call stage -->
+          <div id="stage" class="stage hidden">
+            <div class="remote-wrap">
+              <div class="remote-avatar" id="remoteAvatar"></div>
+              <video id="remoteVideo" autoplay playsinline></video>
+              <div class="remote-flags" id="remoteFlags"></div>
+            </div>
+            <div class="media-wrap">
+              <video id="mediaVideo" playsinline></video>
+              <div class="media-bar">
+                <span data-icon="film"></span>
+                <span id="mediaTitle" class="media-title"></span>
+                <label class="vol" title="Video volume"><span data-icon="volume"></span>
+                  <input type="range" id="mediaVolume" min="0" max="1" step="0.05" value="1" /></label>
+                <button class="btn small" id="mediaStopBtn">Stop sharing</button>
+              </div>
+            </div>
+            <video id="localVideo" class="local" autoplay playsinline muted></video>
+            <div id="stageStatus" class="stage-status"></div>
+            <div id="callTimer" class="call-timer"></div>
+
+            <div class="controls">
+              <button class="ctl" id="micBtn" title="Mute microphone" data-icon="mic"></button>
+              <button class="ctl" id="camBtn" title="Turn camera off" data-icon="video"></button>
+              <button class="ctl" id="screenBtn" title="Share your screen" data-icon="screen"></button>
+              <button class="ctl" id="watchBtn" title="Watch a video together" data-icon="film"></button>
+              <button class="ctl" id="chatToggleBtn" title="Show / hide chat" data-icon="chat"></button>
+              <button class="ctl" id="miniBtn" title="Mini window" data-icon="mini"></button>
+              <button class="ctl danger" id="hangupBtn" title="Hang up" data-icon="hangup"></button>
+            </div>
+
+            <!-- Only visible in the floating mini window -->
+            <div class="compact-controls">
+              <button class="ctl sm" id="expandBtn" title="Back to full window" data-icon="expand"></button>
+              <button class="ctl sm" id="miniMicBtn" title="Mute microphone" data-icon="mic"></button>
+              <button class="ctl sm danger" id="miniHangupBtn" title="Hang up" data-icon="hangup"></button>
+            </div>
+          </div>
+
+          <!-- Chat -->
+          <div class="chat" id="chatPanel">
+            <div id="messages" class="messages"></div>
+            <div id="typing" class="typing"></div>
+            <form id="composer" class="composer">
+              <textarea id="msgInput" rows="1" placeholder="Type a message"></textarea>
+              <button class="icon-btn round accent" title="Send" data-icon="send"></button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ INCOMING CALL ============ -->
+  <div id="incoming" class="modal hidden">
+    <div class="modal-card incoming-card">
+      <div class="avatar xl pulse" id="incomingAvatar"></div>
+      <h2 id="incomingName"></h2>
+      <p id="incomingKind">is calling you…</p>
+      <div class="row">
+        <button class="btn danger" id="declineBtn"><span data-icon="hangup"></span> Decline</button>
+        <button class="btn" id="acceptAudioBtn"><span data-icon="phone"></span> Voice</button>
+        <button class="btn primary" id="acceptVideoBtn"><span data-icon="video"></span> Video</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN PICKER (desktop app) ============ -->
+  <div id="screenPicker" class="modal hidden">
+    <div class="modal-card picker-card">
+      <h2>Share your screen</h2>
+      <p id="pickerNote" class="note hidden"></p>
+      <label class="check sound-toggle" id="shareSoundField"><input type="checkbox" id="shareSound" checked /> Share computer sound</label>
+      <div id="sourceGrid" class="source-grid"></div>
+      <div class="row end">
+        <button class="btn" id="pickerCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS ============ -->
+  <div id="settings" class="modal hidden">
+    <div class="modal-card settings-card">
+      <h2>Audio &amp; video</h2>
+      <video id="previewVideo" class="preview" autoplay playsinline muted></video>
+      <label>Camera <select id="camSelect"></select></label>
+      <label>Microphone <select id="micSelect"></select></label>
+      <label id="speakerField">Speakers <select id="speakerSelect"></select></label>
+      <div class="row end">
+        <button class="btn primary" id="settingsDone">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="screenAudio" autoplay></audio>
+  <div id="toast" class="toast"></div>
+  <input type="file" id="mediaFile" accept="video/*,audio/*" hidden />
+  <script src="app.js"></script>
+</body>
+</html>

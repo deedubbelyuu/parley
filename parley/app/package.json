@@ -1,0 +1,70 @@
+{
+  "name": "parley",
+  "productName": "Parley",
+  "version": "1.0.0",
+  "description": "Video calls, chat, screen sharing and watch-together for friends and family",
+  "main": "main.js",
+  "author": "Daylen",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.daylen.parley",
+    "productName": "Parley",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Parley uses your camera for video calls.",
+        "NSMicrophoneUsageDescription": "Parley uses your microphone for calls.",
+        "NSScreenCaptureUsageDescription": "Parley needs screen recording permission so you can share your screen.",
+        "NSAudioCaptureUsageDescription": "Parley captures your computer's sound when you choose to share it with your screen."
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    }
+  }
+}

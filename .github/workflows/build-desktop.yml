@@ -1,5 +1,6 @@
 # Builds the Parley desktop app for Mac (.dmg) and Windows (.exe installer).
 # Runs when you push a tag like v1.0.0, or manually from the GitHub "Actions" tab.
+# Download the results from the run's "Artifacts" section (and from the Release when tagged).
 name: Build desktop app
 
 on:
@@ -36,6 +37,7 @@ jobs:
       - run: npm install
       - name: Build
         run: npx electron-builder ${{ matrix.target }} --publish never
+        # No paid Apple/Windows certificates: Mac gets an ad-hoc signature, Windows is unsigned.
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

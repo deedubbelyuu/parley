@@ -26,6 +26,11 @@
     hangup: P('<path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 3.1 4.2 2 2 0 0 1 5.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L9 9.8"/><path d="M23 1L1 23"/>'),
     send: P('<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>'),
     volume: P('<path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
+    sidebar: P('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>'),
+    play: P('<path d="M7 4l13 8-13 8V4z" fill="currentColor"/>'),
+    pause: P('<rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/>'),
+    back10: P('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="sans-serif" font-weight="700">10</text>'),
+    fwd10: P('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="sans-serif" font-weight="700">10</text>'),
   };
   const icon = (name) => ICONS[name] || '';
   const paintIcons = (root = document) =>
@@ -115,6 +120,18 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove('show'), ms);
   }
+  // Writes to the console and (desktop app) to parley.log — "Open log file" in Settings.
+  function log(...parts) {
+    const flat = parts.map((p) => (p instanceof Error ? `${p.name}: ${p.message}` : p));
+    console.log('[parley]', ...flat);
+    try {
+      electron?.log?.(...flat.map((p) => (typeof p === 'object' ? JSON.parse(JSON.stringify(p ?? null)) : p)));
+    } catch {}
+  }
+  const errText = (e) => (e ? `${e.name || 'Error'}${e.message ? ': ' + e.message : ''}` : 'unknown error');
+  window.addEventListener('error', (e) => log('window error', e.message, e.filename, e.lineno));
+  window.addEventListener('unhandledrejection', (e) => log('unhandled rejection', errText(e.reason)));
+
   function linkify(el, text) {
     const re = /(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g;
     let last = 0;
@@ -138,6 +155,7 @@
   }
 
   // ------------------------------------------------------------------ sounds (generated, no files needed)
+  // seq: [frequency, start (s), duration (s)]. env 'pluck' = fast attack + natural decay (bells, marimba).
   const Sound = {
     ctx: null,
     loop: null,
@@ -146,36 +164,43 @@
       if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
       return this.ctx;
     },
-    play(seq, gain = 0.12) {
+    play(seq, gain = 0.12, wave = 'sine', env = 'flat') {
       try {
         const ctx = this.get();
         const t0 = ctx.currentTime + 0.02;
         for (const [f, start, dur] of seq) {
           const o = ctx.createOscillator();
           const g = ctx.createGain();
-          o.type = 'sine';
+          o.type = wave;
           o.frequency.value = f;
-          g.gain.setValueAtTime(0, t0 + start);
-          g.gain.linearRampToValueAtTime(gain, t0 + start + 0.02);
-          g.gain.setValueAtTime(gain, t0 + start + dur - 0.04);
-          g.gain.linearRampToValueAtTime(0, t0 + start + dur);
+          const a = t0 + start;
+          g.gain.setValueAtTime(0, a);
+          if (env === 'pluck') {
+            g.gain.linearRampToValueAtTime(gain, a + 0.008);
+            g.gain.exponentialRampToValueAtTime(0.0001, a + dur);
+          } else {
+            g.gain.linearRampToValueAtTime(gain, a + 0.02);
+            g.gain.setValueAtTime(gain, a + dur - 0.04);
+            g.gain.linearRampToValueAtTime(0, a + dur);
+          }
           o.connect(g).connect(ctx.destination);
-          o.start(t0 + start);
-          o.stop(t0 + start + dur + 0.05);
+          o.start(a);
+          o.stop(a + dur + 0.05);
         }
       } catch {}
     },
-    repeat(seq, every, gain) {
+    repeat(seq, every, gain, wave, env) {
       this.stop();
-      this.play(seq, gain);
-      this.loop = setInterval(() => this.play(seq, gain), every);
+      this.play(seq, gain, wave, env);
+      this.loop = setInterval(() => this.play(seq, gain, wave, env), every);
     },
     stop() {
       clearInterval(this.loop);
       this.loop = null;
+      Ring.stopAudio();
     },
     ring() {
-      this.repeat([[784, 0, 0.16], [988, 0.18, 0.16], [1175, 0.36, 0.3], [784, 0.9, 0.16], [988, 1.08, 0.16], [1175, 1.26, 0.3]], 3200, 0.14);
+      Ring.start();
     },
     ringback() {
       this.repeat([[440, 0, 1.2], [480, 0, 1.2]], 4000, 0.05);
@@ -185,6 +210,110 @@
     },
     end() {
       this.play([[520, 0, 0.14], [390, 0.16, 0.24]], 0.1);
+    },
+  };
+
+  // ------------------------------------------------------------------ ringtones
+  const trill = (a, b, len, step = 0.05) => {
+    const out = [];
+    for (let t = 0, i = 0; t < len; t += step, i++) out.push([i % 2 ? b : a, t, step]);
+    return out;
+  };
+  const RINGTONES = {
+    classic: { name: 'Classic', seq: [[784, 0, 0.16], [988, 0.18, 0.16], [1175, 0.36, 0.3], [784, 0.9, 0.16], [988, 1.08, 0.16], [1175, 1.26, 0.3]], every: 3200, gain: 0.14 },
+    marimba: { name: 'Marimba', seq: [[1047, 0, 0.5], [784, 0.15, 0.5], [880, 0.3, 0.5], [1319, 0.45, 0.8], [1047, 1.1, 0.5], [784, 1.25, 0.5], [880, 1.4, 0.5], [1319, 1.55, 0.9]], every: 3400, gain: 0.3, env: 'pluck' },
+    chime: { name: 'Soft chime', seq: [[659, 0, 1.4], [523, 0.4, 1.4], [784, 0.8, 1.8]], every: 3600, gain: 0.22, wave: 'triangle', env: 'pluck' },
+    bell: { name: 'Old phone bell', seq: [...trill(1100, 1350, 1.0, 0.045), ...trill(1100, 1350, 1.0, 0.045).map(([f, t, d]) => [f, t + 1.4, d])], every: 4200, gain: 0.07, wave: 'square' },
+    digital: { name: 'Digital', seq: [[1400, 0, 0.09], [1400, 0.14, 0.09], [1400, 0.28, 0.09], [1400, 0.42, 0.09]], every: 1500, gain: 0.06, wave: 'square' },
+    rise: { name: 'Rising', seq: [[523, 0, 0.16], [659, 0.17, 0.16], [784, 0.34, 0.16], [1047, 0.51, 0.4]], every: 2400, gain: 0.14, wave: 'triangle' },
+    pulse: { name: 'Pulse', seq: [[660, 0, 0.35], [660, 0.5, 0.35]], every: 2000, gain: 0.12, wave: 'sine' },
+  };
+
+  // Custom ringtone files live in IndexedDB (too big for localStorage).
+  const FileStore = {
+    db: null,
+    open() {
+      if (this.db) return Promise.resolve(this.db);
+      return new Promise((res, rej) => {
+        const r = indexedDB.open('parley', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('files');
+        r.onsuccess = () => res((this.db = r.result));
+        r.onerror = () => rej(r.error);
+      });
+    },
+    async get(key) {
+      const db = await this.open();
+      return new Promise((res) => {
+        const q = db.transaction('files').objectStore('files').get(key);
+        q.onsuccess = () => res(q.result || null);
+        q.onerror = () => res(null);
+      });
+    },
+    async put(key, val) {
+      const db = await this.open();
+      return new Promise((res, rej) => {
+        const tx = db.transaction('files', 'readwrite');
+        tx.objectStore('files').put(val, key);
+        tx.oncomplete = () => res();
+        tx.onerror = () => rej(tx.error);
+      });
+    },
+  };
+
+  const Ring = {
+    url: null,
+    previewTimer: null,
+    choice() {
+      return store.get('ringtone', 'classic');
+    },
+    volume() {
+      return Number(store.get('ringVolume', 0.8));
+    },
+    async start(preview) {
+      this.stopAudio();
+      clearInterval(Sound.loop);
+      const id = this.choice();
+      const vol = this.volume();
+      const spk = store.get('devices', {}).speaker;
+      if (id === 'custom') {
+        const f = await FileStore.get('ringtone').catch(() => null);
+        if (f && f.blob) {
+          if (!preview && Call.state !== 'incoming') return; // call was answered while loading
+          const a = $('#ringAudio');
+          if (this.url) URL.revokeObjectURL(this.url);
+          this.url = URL.createObjectURL(f.blob);
+          a.src = this.url;
+          a.volume = Math.min(1, vol);
+          a.loop = true;
+          if (spk && a.setSinkId) a.setSinkId(spk).catch(() => {});
+          a.play().catch((e) => log('ringtone play failed', errText(e)));
+          return;
+        }
+      }
+      const r = RINGTONES[id] || RINGTONES.classic;
+      const ctx = Sound.get();
+      if (spk && ctx.setSinkId) ctx.setSinkId(spk).catch(() => {});
+      Sound.repeat(r.seq, r.every, r.gain * vol * 1.25, r.wave || 'sine', r.env || 'flat');
+    },
+    stopAudio() {
+      const a = document.getElementById('ringAudio');
+      if (a && !a.paused) a.pause();
+      if (a) a.currentTime = 0;
+    },
+    preview() {
+      clearTimeout(this.previewTimer);
+      const playing = Sound.loop || !$('#ringAudio').paused;
+      if (playing && Call.state !== 'incoming') {
+        Sound.stop();
+        $('#ringPreviewBtn').textContent = '▶ Preview';
+        return;
+      }
+      this.start(true);
+      $('#ringPreviewBtn').textContent = '■ Stop';
+      this.previewTimer = setTimeout(() => {
+        if (Call.state !== 'incoming') Sound.stop();
+        $('#ringPreviewBtn').textContent = '▶ Preview';
+      }, 6500);
     },
   };
 
@@ -607,7 +736,164 @@
     const p = store.get('devices', {});
     // 'all' = remove everything the computer plays (shared videos, notifications) from the mic,
     // not just the call audio. Engines that don't know 'all' treat it as plain `true`.
-    return { echoCancellation: 'all', noiseSuppression: true, autoGainControl: true, ...(p.mic ? { deviceId: { ideal: p.mic } } : {}) };
+    // The built-in noise filter only handles steady hiss; when the AI filter is on we turn the
+    // built-in one off so the two don't fight (double filtering makes voices watery).
+    return {
+      echoCancellation: 'all',
+      noiseSuppression: NoiseFX.mode() === 'off',
+      autoGainControl: true,
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: 48000 },
+      ...(p.mic ? { deviceId: { ideal: p.mic } } : {}),
+    };
+  }
+
+  // ------------------------------------------------------------------ AI background-noise removal
+  // RNNoise ("standard") or GTCRN ("strong") running in an AudioWorklet, from
+  // @sapphi-red/web-noise-suppressor (MIT), vendored in renderer/vendor/noise.
+  // Raw mic → worklet → new track. The raw track is kept on the processed one (track._raw).
+  const NoiseFX = {
+    ctx: null,
+    modules: {},
+    wasm: {},
+    IDS: { standard: '@sapphi-red/web-noise-suppressor/rnnoise', strong: '@sapphi-red/web-noise-suppressor/gtcrn' },
+    mode() {
+      const m = store.get('noise', 'standard');
+      return m in this.IDS || m === 'off' ? m : 'standard';
+    },
+    supported() {
+      return typeof AudioWorkletNode !== 'undefined' && typeof WebAssembly !== 'undefined';
+    },
+    async context() {
+      if (!this.ctx || this.ctx.state === 'closed') this.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+      if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => {});
+      return this.ctx;
+    },
+    async load(mode) {
+      const ctx = await this.context();
+      if (!this.modules[mode]) {
+        this.modules[mode] = ctx.audioWorklet.addModule(mode === 'strong' ? 'vendor/noise/gtcrn-worklet.js' : 'vendor/noise/rnnoise-worklet.js');
+      }
+      await this.modules[mode];
+      if (!this.wasm[mode]) {
+        const simd = WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+        const file = mode === 'strong' ? 'gtcrn.wasm' : simd ? 'rnnoise_simd.wasm' : 'rnnoise.wasm';
+        const res = await fetch('vendor/noise/' + file);
+        if (!res.ok) throw new Error('could not load ' + file);
+        this.wasm[mode] = await res.arrayBuffer();
+      }
+      return ctx;
+    },
+    // Returns a processed track (or the raw one if the filter is off / unavailable).
+    async process(raw, mode = this.mode()) {
+      if (!raw || raw._parleyPlaceholder || mode === 'off' || !this.supported()) return raw;
+      try {
+        const ctx = await this.load(mode);
+        const src = ctx.createMediaStreamSource(new MediaStream([raw]));
+        const node = new AudioWorkletNode(ctx, this.IDS[mode], {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          outputChannelCount: [1],
+          processorOptions: { maxChannels: 1, wasmBinary: this.wasm[mode].slice(0) },
+        });
+        const dst = ctx.createMediaStreamDestination();
+        dst.channelCount = 1;
+        src.connect(node).connect(dst);
+        const out = dst.stream.getAudioTracks()[0];
+        out._raw = raw;
+        out._noise = mode;
+        out._cleanup = () => {
+          try {
+            node.port.postMessage('destroy');
+            src.disconnect();
+            node.disconnect();
+          } catch {}
+        };
+        // If the mic is unplugged, end the processed track too.
+        raw.addEventListener('ended', () => out.stop());
+        log('noise removal on:', mode);
+        return out;
+      } catch (e) {
+        log('noise removal failed, using plain mic', errText(e));
+        toast('Couldn’t start background-noise removal. Using the normal microphone.');
+        return raw;
+      }
+    },
+  };
+  // Stop a (possibly processed) mic track and everything behind it.
+  function stopMic(t) {
+    if (!t) return;
+    try {
+      t._cleanup?.();
+      t.stop();
+      t._raw?.stop();
+    } catch {}
+  }
+
+  // ------------------------------------------------------------------ audio quality
+  // Opus bitrates per preset: voice (mic) and music (shared computer sound / watch-together).
+  const QUALITY = {
+    low: { mic: 24_000, music: 64_000 },
+    high: { mic: 64_000, music: 192_000 },
+    max: { mic: 128_000, music: 320_000 },
+  };
+  const quality = () => QUALITY[store.get('quality', 'high')] || QUALITY.high;
+
+  // Chrome sends Opus as mono ~32 kbps by default. We rewrite the *remote* description so our
+  // encoder is allowed to send stereo (for music/movies) at a real bitrate, with forward error
+  // correction for packet loss. The first audio section is always the microphone.
+  function tuneOpus(sdp) {
+    if (!sdp || !/opus\/48000/i.test(sdp)) return sdp;
+    const q = quality();
+    const parts = sdp.split(/(?=\r?\nm=)/);
+    let audioIdx = 0;
+    return parts
+      .map((sec) => {
+        if (!/^\r?\nm=audio/.test(sec)) return sec;
+        const isMic = audioIdx++ === 0;
+        const want = {
+          minptime: '10',
+          useinbandfec: '1',
+          usedtx: '0',
+          stereo: isMic ? '0' : '1',
+          'sprop-stereo': isMic ? '0' : '1',
+          maxaveragebitrate: String(isMic ? q.mic : q.music),
+          maxplaybackrate: '48000',
+        };
+        const pts = [...sec.matchAll(/a=rtpmap:(\d+) opus\/48000\/2/gi)].map((m) => m[1]);
+        for (const pt of pts) {
+          const re = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+          const fmt = (map) => [...map].map(([k, v]) => `${k}=${v}`).join(';');
+          if (re.test(sec)) {
+            sec = sec.replace(re, (_, params) => {
+              const map = new Map(params.split(';').map((kv) => kv.trim().split('=')).filter((a) => a[0]));
+              for (const [k, v] of Object.entries(want)) map.set(k, v);
+              return `a=fmtp:${pt} ${fmt(map)}`;
+            });
+          } else {
+            sec = sec.replace(new RegExp(`(a=rtpmap:${pt} opus/48000/2)(\\r?\\n)`, 'i'), `$1$2a=fmtp:${pt} ${fmt(new Map(Object.entries(want)))}$2`);
+          }
+        }
+        return sec;
+      })
+      .join('');
+  }
+  async function setAudioParams(sender, bps) {
+    for (let i = 0; i < 20; i++) {
+      try {
+        const p = sender.getParameters();
+        if (p.encodings && p.encodings.length) {
+          p.encodings[0].maxBitrate = bps;
+          p.encodings[0].priority = 'high';
+          p.encodings[0].networkPriority = 'high';
+          await sender.setParameters(p);
+          return;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 500));
+    }
   }
   function videoConstraints() {
     const p = store.get('devices', {});
@@ -834,6 +1120,15 @@
         case 'media-stop':
           if (this.remoteMediaId) this.clearMediaView();
           break;
+        case 'media-ctl':
+          if (!this.mediaUrl) break;
+          this.mediaControl(data.action, Number(data.delta) || 0);
+          if (data.action === 'toggle') toast(`${this.peer} ${el.media.paused ? 'resumed' : 'paused'} the video`, 2000);
+          break;
+        case 'media-state':
+          this.remoteMediaPaused = !!data.paused;
+          this.renderMediaBar();
+          break;
       }
     },
 
@@ -846,6 +1141,7 @@
       this.audioSender = pc.addTrack(this.audioTrack, camStream);
       this.videoSender = pc.addTrack(this.currentVideoTrack(), camStream);
       setMaxBitrate(this.videoSender, 1_500_000);
+      setAudioParams(this.audioSender, quality().mic);
 
       pc.onnegotiationneeded = async () => {
         if (!this.canOffer) return;
@@ -864,6 +1160,13 @@
       };
       pc.ontrack = (ev) => {
         const stream = ev.streams[0] || new MediaStream([ev.track]);
+        const role = this.roles[stream.id] || (stream.id === this.remoteMediaId ? 'media' : 'cam');
+        log('remote track', ev.track.kind, role);
+        // Movies don't need low latency: a bigger buffer keeps playback smooth on shaky Wi-Fi.
+        try {
+          if (role === 'media') ev.receiver.jitterBufferTarget = 400;
+          else if (role === 'screen-audio') ev.receiver.jitterBufferTarget = 150;
+        } catch {}
         if (this.roles[stream.id] === 'screen-audio') {
           const a = $('#screenAudio');
           if (a.srcObject !== stream) a.srcObject = stream;
@@ -888,7 +1191,7 @@
       this.ignoreOffer = !this.polite && collision;
       if (this.ignoreOffer) return;
       try {
-        await pc.setRemoteDescription(description);
+        await pc.setRemoteDescription({ type: description.type, sdp: tuneOpus(description.sdp) });
         this.canOffer = true;
         for (const c of this.pendingIce.splice(0)) await pc.addIceCandidate(c).catch(() => {});
         if (description.type === 'offer') {
@@ -976,7 +1279,14 @@
         stream?.getTracks().forEach((t) => t.stop());
         return false;
       }
-      this.audioTrack = stream?.getAudioTracks()[0] || silentAudioTrack();
+      const rawMic = stream?.getAudioTracks()[0];
+      this.audioTrack = rawMic ? await NoiseFX.process(rawMic) : silentAudioTrack();
+      if (this.state === 'idle') {
+        stopMic(this.audioTrack);
+        stream?.getTracks().forEach((t) => t.stop());
+        this.audioTrack = null;
+        return false;
+      }
       this.blackTrack = blackVideoTrack();
       this.camTrack = hasCam ? stream.getVideoTracks()[0] : null;
       this.camOn = hasCam;
@@ -1012,6 +1322,34 @@
       this.sendFlags();
     },
 
+    // Swap in a new microphone (device change) or re-run noise removal (mode change), live.
+    async setMic(raw) {
+      const t = await NoiseFX.process(raw);
+      t.enabled = this.micOn;
+      if (this.audioSender) await this.audioSender.replaceTrack(t);
+      const old = this.audioTrack;
+      this.audioTrack = t;
+      if (old && old !== t) {
+        if (old._raw === raw) {
+          old._cleanup?.(); // same mic, new filter: keep the raw mic running
+          old.stop();
+        } else if (old !== raw) stopMic(old);
+      }
+    },
+    async rebuildMic() {
+      if (!this.audioTrack || this.audioTrack._parleyPlaceholder) return;
+      const raw = this.audioTrack._raw || this.audioTrack;
+      if (raw.readyState === 'ended') return;
+      await this.setMic(raw);
+    },
+    applyQuality() {
+      if (!this.pc) return;
+      const q = quality();
+      if (this.audioSender) setAudioParams(this.audioSender, q.mic);
+      if (this.screenAudio) setAudioParams(this.screenAudio.sender, q.music);
+      for (const s of this.mediaSenders) if (s.track?.kind === 'audio') setAudioParams(s, q.music);
+    },
+
     async toggleCam() {
       if (this.camOn) {
         this.camOn = false;
@@ -1033,8 +1371,19 @@
 
     async toggleScreen() {
       if (this.screenTrack) return this.stopScreen();
-      let stream;
-      let withAudio = false;
+      if (this.screenStarting) return;
+      this.screenStarting = true;
+      $('#screenBtn').classList.add('busy');
+      try {
+        await this.startScreen();
+      } finally {
+        this.screenStarting = false;
+        $('#screenBtn').classList.remove('busy');
+        this.renderControls();
+      }
+    },
+
+    async startScreen() {
       const md = navigator.mediaDevices;
       const sup = md.getSupportedConstraints ? md.getSupportedConstraints() : {};
       const audioC = {
@@ -1044,34 +1393,81 @@
         ...(sup.restrictOwnAudio ? { restrictOwnAudio: true } : {}), // leave out Parley's own sound
       };
       const videoC = { frameRate: { ideal: 30 }, width: { max: 1920 }, height: { max: 1080 } };
+      // getDisplayMedia can hang forever if the OS never answers. Give up after 15 s
+      // (and stop the capture if it turns up later) so the button never looks dead.
+      const capture = (constraints) =>
+        new Promise((resolve, reject) => {
+          let done = false;
+          const timer = setTimeout(() => {
+            done = true;
+            const e = new Error('the screen capture never started (timed out)');
+            e.name = 'TimeoutError';
+            reject(e);
+          }, 15000);
+          md.getDisplayMedia(constraints).then(
+            (st) => {
+              clearTimeout(timer);
+              if (done) return st.getTracks().forEach((t) => t.stop());
+              done = true;
+              resolve(st);
+            },
+            (e) => {
+              clearTimeout(timer);
+              if (!done) {
+                done = true;
+                reject(e);
+              }
+            }
+          );
+        });
+
+      let stream;
+      let wantedSound = false;
       try {
         if (electron) {
           const pick = await pickScreenSource();
           if (!pick) return;
-          withAudio = pick.withAudio;
-          await electron.selectScreenSource(pick.id, withAudio);
-          try {
-            stream = await md.getDisplayMedia({ video: videoC, audio: withAudio ? audioC : false });
-          } catch (e) {
-            if (!withAudio) throw e;
-            // sound capture refused (old OS / permission) — share the picture without it
-            console.warn('screen + sound failed, retrying without sound', e);
-            await electron.selectScreenSource(pick.id, false);
-            stream = await md.getDisplayMedia({ video: videoC, audio: false });
-            toast('Couldn’t capture computer sound — sharing your screen without it.', 6000);
+          wantedSound = pick.withAudio;
+          log('screen share: start', pick.id, wantedSound ? 'with sound' : 'no sound');
+          this.setStatus('Starting screen share…');
+          // Try: sound with our settings → sound with defaults → picture only.
+          const attempts = wantedSound ? [audioC, true, false] : [false];
+          let lastErr = null;
+          for (const audio of attempts) {
+            try {
+              await electron.selectScreenSource(pick.id, !!audio);
+              stream = await capture({ video: videoC, audio });
+              break;
+            } catch (e) {
+              lastErr = e;
+              log('screen share attempt failed', audio === false ? 'video-only' : 'with sound', errText(e));
+            }
           }
+          if (!stream) throw lastErr || new Error('no stream');
         } else {
-          stream = await md.getDisplayMedia({ video: videoC, audio: audioC, systemAudio: 'include' });
+          wantedSound = true;
+          this.setStatus('Starting screen share…');
+          stream = await capture({ video: videoC, audio: audioC, systemAudio: 'include' });
         }
       } catch (e) {
-        console.warn(e);
+        this.setStatus('');
+        if (e && e.name === 'NotAllowedError' && !electron) return; // user pressed Cancel in the browser picker
+        log('screen share failed', errText(e));
         if (electron?.platform === 'darwin') {
-          toast('Screen sharing was blocked. Allow Parley in System Settings → Privacy & Security → Screen & System Audio Recording, then restart Parley.', 8000);
+          toast('Screen sharing was blocked. Allow Parley in System Settings → Privacy & Security → Screen & System Audio Recording, then restart Parley.', 9000);
+        } else {
+          toast(`Screen sharing didn’t start (${errText(e)}). Settings → Open log file has details.`, 9000);
         }
         return;
       }
+      this.setStatus('');
       if (this.state === 'idle' || !this.pc) return stream.getTracks().forEach((t) => t.stop());
       const track = stream.getVideoTracks()[0];
+      if (!track) {
+        stream.getTracks().forEach((t) => t.stop());
+        return toast('Screen sharing gave no picture. Try a different screen or window.');
+      }
+      log('screen share running', track.label, track.getSettings ? track.getSettings() : {});
       track.contentHint = 'detail';
       track.addEventListener('ended', () => this.stopScreen());
       this.screenTrack = track;
@@ -1079,6 +1475,7 @@
       setMaxBitrate(this.videoSender, 2_500_000, 'maintain-resolution');
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) this.startScreenAudio(audioTrack);
+      else if (wantedSound && electron) toast('Sharing your screen without computer sound (your system didn’t allow it).', 6000);
       this.renderControls();
       this.sig({ kind: 'screen', on: true, sound: !!audioTrack });
     },
@@ -1095,7 +1492,8 @@
       const stream = new MediaStream([send]);
       this.sig({ kind: 'stream-role', streamId: stream.id, role: 'screen-audio' });
       const sender = this.pc.addTrack(send, stream);
-      setMaxBitrate(sender, 128_000);
+      setAudioParams(sender, quality().music);
+      log('screen sound on', excluded ? '(own audio excluded by system)' : '(echo guard)');
       this.screenAudio = { raw, send, stream, sender, guard: !excluded };
       raw.addEventListener('ended', () => this.stopScreenAudio());
       if (!excluded) toast('Sharing computer sound. Echo guard on: the sound dips while your friend talks.', 6000);
@@ -1189,6 +1587,12 @@
       }
       const stream = v.captureStream();
       await waitFor(() => stream.getVideoTracks().length && stream.getAudioTracks().length, 1500);
+      if (!stream.getVideoTracks().length && !stream.getAudioTracks().length) {
+        log('watch-together: captureStream gave no tracks');
+        toast('Couldn’t read that video for sharing. Try converting it to .mp4 (H.264/AAC).', 7000);
+        return this.stopMedia();
+      }
+      log('watch-together start', file.name, file.type, `${v.videoWidth}x${v.videoHeight}`, 'tracks', stream.getTracks().map((t) => t.kind).join(','));
       this.mediaStream = stream;
       this.sig({ kind: 'stream-role', streamId: stream.id, role: 'media', title: file.name });
       for (const t of stream.getTracks()) this.addMediaTrack(t);
@@ -1204,10 +1608,11 @@
       if (t.kind === 'video') t.contentHint = 'motion';
       const s = this.pc.addTrack(t, this.mediaStream);
       this.mediaSenders.push(s);
-      if (t.kind === 'video') setMaxBitrate(s, 3_000_000, 'balanced');
+      log('watch-together track added', t.kind);
+      if (t.kind === 'video') setMaxBitrate(s, store.get('quality', 'high') === 'low' ? 2_000_000 : 6_000_000, 'maintain-framerate');
       else {
         t.contentHint = 'music';
-        setMaxBitrate(s, 128_000);
+        setAudioParams(s, quality().music);
       }
     },
 
@@ -1231,6 +1636,29 @@
       if (!this.remoteMediaId) el.stage.classList.remove('has-media');
       if (wasSharing && this.state !== 'idle') this.sig({ kind: 'media-stop' });
       this.renderControls();
+    },
+
+    // Play / pause / skip work from both sides: the viewer's buttons ask the sharer's player.
+    mediaControl(action, delta = 0) {
+      const v = el.media;
+      if (this.mediaUrl) {
+        if (action === 'toggle') (v.paused ? v.play() : Promise.resolve(v.pause())).catch(() => {});
+        else if (action === 'seek' && isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration - 0.25, v.currentTime + delta));
+      } else if (this.remoteMediaId) {
+        this.sig({ kind: 'media-ctl', action, delta });
+      }
+    },
+    sendMediaState() {
+      if (!this.mediaUrl) return;
+      const v = el.media;
+      this.sig({ kind: 'media-state', paused: v.paused, ended: v.ended, t: v.currentTime });
+      this.renderMediaBar();
+    },
+    renderMediaBar() {
+      const paused = this.mediaUrl ? el.media.paused : !!this.remoteMediaPaused;
+      const b = $('#mediaPlayBtn');
+      if (b.dataset.icon !== (paused ? 'play' : 'pause')) setIcon(b, paused ? 'play' : 'pause');
+      b.title = paused ? 'Play' : 'Pause';
     },
 
     showRemoteMedia(stream) {
@@ -1312,6 +1740,12 @@
       w.disabled = !live || !!this.remoteMediaId;
       w.classList.toggle('on', !!this.mediaStream);
       w.title = this.mediaStream ? 'Stop sharing video' : this.remoteMediaId ? `${this.peer} is sharing a video` : 'Watch a video together';
+      const banner = $('#shareBanner');
+      banner.classList.toggle('hidden', !this.screenTrack);
+      $('#shareBannerText').textContent = this.screenAudio
+        ? `You’re sharing your screen + sound${this.screenAudio.guard ? ' (echo guard on)' : ''}`
+        : 'You’re sharing your screen';
+      this.renderMediaBar();
     },
     setBusy(b) {
       wsSend({ type: 'status', status: b ? 'busy' : 'online' });
@@ -1336,7 +1770,8 @@
         this.pc?.close();
       } catch {}
       this.pc = null;
-      for (const t of [this.audioTrack, this.camTrack, this.screenTrack, this.blackTrack]) {
+      stopMic(this.audioTrack);
+      for (const t of [this.camTrack, this.screenTrack, this.blackTrack]) {
         try {
           t?._stopDraw?.();
           t?.stop();
@@ -1355,7 +1790,9 @@
         audioSender: null, videoSender: null, makingOffer: false, ignoreOffer: false, canOffer: false, pendingIce: [],
         roles: {}, remoteCamStream: null, mediaStream: null, mediaSenders: [], mediaUrl: null, remoteMediaId: null,
         remoteMediaTitle: null, startedAt: 0, everConnected: false, remoteMicOn: true, remoteScreen: false, remoteCamFlag: false,
+        remoteMediaPaused: false, screenStarting: false,
       });
+      $('#shareBanner').classList.add('hidden');
       el.remote.srcObject = null;
       el.local.srcObject = null;
       el.media.pause();
@@ -1464,6 +1901,12 @@
   let previewStream = null;
   async function openSettings() {
     $('#settings').classList.remove('hidden');
+    $('#noiseSelect').value = NoiseFX.mode();
+    $('#qualitySelect').value = store.get('quality', 'high');
+    $('#ringVolume').value = Ring.volume();
+    $('#hearSelf').checked = false;
+    fillRingtones();
+    fillBrowsers();
     let devices = await navigator.mediaDevices.enumerateDevices();
     if (!devices.some((d) => d.label)) {
       try {
@@ -1491,6 +1934,7 @@
     $('#speakerField').classList.toggle('hidden', !canSink);
     if (canSink) fill($('#speakerSelect'), 'audiooutput', prefs.speaker);
     startPreview();
+    startMicTest();
   }
   async function startPreview() {
     stopPreview();
@@ -1509,11 +1953,111 @@
     previewStream = null;
     $('#previewVideo').srcObject = null;
   }
+
+  // Level meter (after noise removal) + optional "hear yourself" loop.
+  let micTest = null;
+  async function startMicTest() {
+    stopMicTest();
+    const token = {};
+    micTest = token;
+    let track;
+    let own = false;
+    try {
+      if (Call.state !== 'idle' && Call.audioTrack && !Call.audioTrack._parleyPlaceholder) {
+        track = Call.audioTrack;
+      } else {
+        const id = $('#micSelect').value;
+        const c = audioConstraints();
+        if (id) c.deviceId = { exact: id };
+        const s = await navigator.mediaDevices.getUserMedia({ audio: c });
+        track = await NoiseFX.process(s.getAudioTracks()[0]);
+        own = true;
+      }
+    } catch (e) {
+      log('mic test failed', errText(e));
+      return;
+    }
+    if (micTest !== token) return own && stopMic(track);
+    const ctx = Sound.get();
+    const src = ctx.createMediaStreamSource(new MediaStream([track]));
+    const an = ctx.createAnalyser();
+    an.fftSize = 1024;
+    src.connect(an);
+    const buf = new Float32Array(an.fftSize);
+    const bar = $('#micMeter');
+    let raf;
+    const tick = () => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      bar.style.width = Math.min(100, Math.round(Math.sqrt(rms) * 160)) + '%';
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    Object.assign(token, {
+      track,
+      own,
+      stop() {
+        cancelAnimationFrame(raf);
+        try {
+          src.disconnect();
+        } catch {}
+        bar.style.width = '0';
+        const a = $('#hearSelfAudio');
+        a.pause();
+        a.srcObject = null;
+        if (own) stopMic(track);
+      },
+    });
+    applyHearSelf();
+  }
+  function stopMicTest() {
+    micTest?.stop?.();
+    micTest = null;
+  }
+  function applyHearSelf() {
+    const a = $('#hearSelfAudio');
+    if ($('#hearSelf').checked && micTest?.track) {
+      a.srcObject = new MediaStream([micTest.track]);
+      const spk = $('#speakerSelect').value;
+      if (spk && a.setSinkId) a.setSinkId(spk).catch(() => {});
+      a.play().catch(() => {});
+    } else {
+      a.pause();
+      a.srcObject = null;
+    }
+  }
+
+  async function fillRingtones() {
+    const sel = $('#ringSelect');
+    sel.innerHTML = '';
+    for (const [id, r] of Object.entries(RINGTONES)) sel.append(new Option(r.name, id));
+    const custom = await FileStore.get('ringtone').catch(() => null);
+    if (custom && custom.blob) sel.append(new Option(`Your sound: ${custom.name || 'custom'}`, 'custom'));
+    sel.append(new Option('Choose a sound file…', '__file'));
+    sel.value = Ring.choice() === 'custom' && !custom ? 'classic' : Ring.choice();
+  }
+  async function fillBrowsers() {
+    if (!electron?.listBrowsers) return;
+    const sel = $('#browserSelect');
+    const chosen = store.get('linkBrowser', '');
+    const list = await electron.listBrowsers().catch(() => []);
+    sel.innerHTML = '';
+    sel.append(new Option('System default browser', ''));
+    for (const b of list) sel.append(new Option(b.name, b.exe));
+    if (chosen && !list.some((b) => b.exe === chosen)) sel.append(new Option(`${chosen.split(/[\\/]/).pop()} (not found)`, chosen));
+    sel.value = chosen;
+  }
+
   async function saveSettings() {
     const before = store.get('devices', {});
     const prefs = { cam: $('#camSelect').value, mic: $('#micSelect').value, speaker: $('#speakerSelect').value };
     store.set('devices', prefs);
     stopPreview();
+    stopMicTest();
+    if (Sound.loop && Call.state !== 'incoming') Sound.stop();
+    $('#ringPreviewBtn').textContent = '▶ Preview';
     $('#settings').classList.add('hidden');
     applySpeaker();
     if (Call.state === 'idle' || !Call.pc) return;
@@ -1521,11 +2065,7 @@
     if (prefs.mic && prefs.mic !== before.mic) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() });
-        const t = s.getAudioTracks()[0];
-        t.enabled = Call.micOn;
-        await Call.audioSender.replaceTrack(t);
-        Call.audioTrack?.stop();
-        Call.audioTrack = t;
+        await Call.setMic(s.getAudioTracks()[0]);
       } catch {
         toast('Couldn’t switch microphone.');
       }
@@ -1544,12 +2084,85 @@
   function applySpeaker() {
     const id = store.get('devices', {}).speaker;
     if (!id || !('setSinkId' in HTMLMediaElement.prototype)) return;
-    for (const v of [el.remote, el.media, $('#screenAudio')]) v.setSinkId(id).catch(() => {});
+    for (const v of [el.remote, el.media, $('#screenAudio'), $('#ringAudio')]) v.setSinkId(id).catch(() => {});
+  }
+  function setSidebarHidden(hidden) {
+    $('#main').classList.toggle('sidebar-hidden', hidden);
+    store.set('sidebarHidden', hidden);
+  }
+
+  function bindSettings() {
+    $('#noiseSelect').addEventListener('change', async (e) => {
+      store.set('noise', e.target.value);
+      if (Call.state !== 'idle') {
+        await Call.rebuildMic();
+        toast(e.target.value === 'off' ? 'Background-noise removal off' : 'Background-noise removal updated');
+      }
+      startMicTest();
+    });
+    $('#micSelect').addEventListener('change', () => Call.state === 'idle' && startMicTest());
+    $('#hearSelf').addEventListener('change', applyHearSelf);
+    $('#qualitySelect').addEventListener('change', (e) => {
+      store.set('quality', e.target.value);
+      Call.applyQuality();
+    });
+    $('#ringSelect').addEventListener('change', (e) => {
+      const v = e.target.value;
+      if (v === '__file') {
+        e.target.value = Ring.choice();
+        $('#ringFile').value = '';
+        return $('#ringFile').click();
+      }
+      store.set('ringtone', v);
+      Ring.preview();
+    });
+    $('#ringFile').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (f.size > 20 * 1024 * 1024) return toast('That file is too big for a ringtone (20 MB max).');
+      try {
+        await FileStore.put('ringtone', { blob: f, name: f.name.replace(/\.[^.]+$/, '') });
+        store.set('ringtone', 'custom');
+        await fillRingtones();
+        Ring.preview();
+      } catch (err) {
+        log('ringtone save failed', errText(err));
+        toast('Couldn’t save that sound.');
+      }
+    });
+    $('#ringVolume').addEventListener('input', (e) => {
+      store.set('ringVolume', Number(e.target.value));
+      $('#ringAudio').volume = Number(e.target.value);
+    });
+    $('#ringVolume').addEventListener('change', () => !Sound.loop && $('#ringAudio').paused && Ring.preview());
+    $('#ringPreviewBtn').addEventListener('click', () => Ring.preview());
+    $('#browserSelect').addEventListener('change', (e) => {
+      store.set('linkBrowser', e.target.value);
+      electron?.setLinkBrowser(e.target.value);
+    });
+    $('#openLogBtn').addEventListener('click', () => electron?.openLog());
+    if (!electron) {
+      $('#linkSection').classList.add('hidden');
+      $('#troubleSection').classList.add('hidden');
+    } else {
+      electron.setLinkBrowser?.(store.get('linkBrowser', ''));
+    }
   }
 
   // ------------------------------------------------------------------ wire up UI
   function bind() {
     paintIcons();
+    bindSettings();
+    setSidebarHidden(!!store.get('sidebarHidden', false));
+    document.querySelectorAll('.sidebar-toggle').forEach((b) =>
+      b.addEventListener('click', () => setSidebarHidden(!$('#main').classList.contains('sidebar-hidden')))
+    );
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarHidden(!$('#main').classList.contains('sidebar-hidden'));
+      }
+    });
     $('#search').addEventListener('input', renderContacts);
     $('#logoutBtn').addEventListener('click', () => signOut(true));
     $('#settingsBtn').addEventListener('click', openSettings);
@@ -1594,6 +2207,11 @@
       if (f) Call.startMedia(f);
     });
     $('#mediaStopBtn').addEventListener('click', () => Call.stopMedia());
+    $('#mediaPlayBtn').addEventListener('click', () => Call.mediaControl('toggle'));
+    $('#mediaBackBtn').addEventListener('click', () => Call.mediaControl('seek', -10));
+    $('#mediaFwdBtn').addEventListener('click', () => Call.mediaControl('seek', 10));
+    for (const ev of ['play', 'pause', 'ended', 'seeked']) el.media.addEventListener(ev, () => Call.sendMediaState());
+    $('#shareStopBtn').addEventListener('click', () => Call.stopScreen());
     $('#mediaVolume').addEventListener('input', (e) => (el.media.volume = Number(e.target.value)));
     $('#chatToggleBtn').addEventListener('click', () => $('#convo').classList.toggle('chat-hidden'));
     $('#miniBtn').addEventListener('click', goMini);

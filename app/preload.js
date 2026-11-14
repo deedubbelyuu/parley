@@ -15,4 +15,9 @@ contextBridge.exposeInMainWorld('parley', {
   notify: (title, body, silent) => ipcRenderer.send('notify', { title, body, silent }),
   attention: () => ipcRenderer.send('attention'),
   focusWindow: () => ipcRenderer.send('focus-window'),
+  log: (...parts) => ipcRenderer.send('log', parts),
+  openLog: () => ipcRenderer.send('open-log'),
+  listBrowsers: () => ipcRenderer.invoke('list-browsers'),
+  setLinkBrowser: (exe) => ipcRenderer.send('set-link-browser', exe || ''),
+  openLink: (url) => ipcRenderer.send('open-link', url),
 });

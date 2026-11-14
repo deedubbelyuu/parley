@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' ws: wss: http: https:;" />
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' ws: wss: http: https:;" />
   <title>Parley</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="styles.css" />
@@ -40,7 +40,7 @@
           <div class="me-name" id="myName"></div>
           <div class="me-status" id="myStatus">Online</div>
         </div>
-        <button class="icon-btn" id="settingsBtn" title="Audio &amp; video settings" data-icon="settings"></button>
+        <button class="icon-btn" id="settingsBtn" title="Settings" data-icon="settings"></button>
         <button class="icon-btn" id="logoutBtn" title="Sign out" data-icon="logout"></button>
       </div>
       <div id="connBanner" class="conn-banner hidden">Reconnecting to server…</div>
@@ -51,12 +51,14 @@
 
     <section class="content">
       <div id="empty" class="empty">
+        <button class="icon-btn sidebar-toggle floating" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
         <span data-icon="chat" class="big-icon"></span>
         <p>Pick someone on the left to chat or call.</p>
       </div>
 
       <div id="convo" class="convo hidden">
         <header class="convo-header">
+          <button class="icon-btn sidebar-toggle" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
           <div class="avatar" id="peerAvatar"></div>
           <div class="peer-text">
             <div class="peer-name" id="peerName"></div>
@@ -80,12 +82,20 @@
               <div class="media-bar">
                 <span data-icon="film"></span>
                 <span id="mediaTitle" class="media-title"></span>
+                <button class="icon-btn" id="mediaBackBtn" title="Back 10 seconds" data-icon="back10"></button>
+                <button class="icon-btn" id="mediaPlayBtn" title="Pause" data-icon="pause"></button>
+                <button class="icon-btn" id="mediaFwdBtn" title="Forward 10 seconds" data-icon="fwd10"></button>
                 <label class="vol" title="Video volume"><span data-icon="volume"></span>
                   <input type="range" id="mediaVolume" min="0" max="1" step="0.05" value="1" /></label>
                 <button class="btn small" id="mediaStopBtn">Stop sharing</button>
               </div>
             </div>
             <video id="localVideo" class="local" autoplay playsinline muted></video>
+            <div id="shareBanner" class="share-banner hidden">
+              <span class="rec-dot"></span>
+              <span id="shareBannerText">You’re sharing your screen</span>
+              <button class="btn small danger" id="shareStopBtn">Stop</button>
+            </div>
             <div id="stageStatus" class="stage-status"></div>
             <div id="callTimer" class="call-timer"></div>
 
@@ -151,11 +161,51 @@
   <!-- ============ SETTINGS ============ -->
   <div id="settings" class="modal hidden">
     <div class="modal-card settings-card">
-      <h2>Audio &amp; video</h2>
+      <h2>Settings</h2>
+
+      <h3>Audio &amp; video</h3>
       <video id="previewVideo" class="preview" autoplay playsinline muted></video>
       <label>Camera <select id="camSelect"></select></label>
       <label>Microphone <select id="micSelect"></select></label>
+      <div class="meter" title="Microphone level (after noise removal)"><div id="micMeter"></div></div>
       <label id="speakerField">Speakers <select id="speakerSelect"></select></label>
+
+      <label>Background noise removal
+        <select id="noiseSelect">
+          <option value="standard">Standard: AI (RNNoise), full-quality voice (recommended)</option>
+          <option value="strong">Strong: AI (GTCRN), removes more (TV, kids, music) but voice is less crisp</option>
+          <option value="off">Off: built-in filter only</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="hearSelf" /> Hear yourself (use headphones) to test noise removal</label>
+
+      <label>Call audio quality
+        <select id="qualitySelect">
+          <option value="high">High: clear voice, stereo for shared sound (recommended)</option>
+          <option value="max">Maximum: studio-like, needs good internet</option>
+          <option value="low">Data saver: for weak connections</option>
+        </select>
+      </label>
+
+      <h3>Ringtone</h3>
+      <div class="row tight">
+        <select id="ringSelect" class="grow"></select>
+        <button class="btn small" id="ringPreviewBtn" type="button">▶ Preview</button>
+      </div>
+      <label>Ringtone volume <input type="range" id="ringVolume" min="0" max="1" step="0.05" value="0.8" /></label>
+      <input type="file" id="ringFile" accept="audio/*" hidden />
+
+      <div id="linkSection">
+        <h3>Links</h3>
+        <label>Open links from chat in <select id="browserSelect"><option value="">System default browser</option></select></label>
+      </div>
+
+      <div id="troubleSection">
+        <h3>Troubleshooting</h3>
+        <div class="row tight"><button class="btn small" id="openLogBtn" type="button">Open log file</button>
+          <span class="muted small">Send this to Daylen if something breaks.</span></div>
+      </div>
+
       <div class="row end">
         <button class="btn primary" id="settingsDone">Done</button>
       </div>
@@ -163,6 +213,8 @@
   </div>
 
   <audio id="screenAudio" autoplay></audio>
+  <audio id="ringAudio" loop></audio>
+  <audio id="hearSelfAudio"></audio>
   <div id="toast" class="toast"></div>
   <input type="file" id="mediaFile" accept="video/*,audio/*" hidden />
   <script src="app.js"></script>

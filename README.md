@@ -2,11 +2,15 @@
 
 A private, Skype-style app for you and your people. It has:
 
-- **Video and voice calls** (1-on-1, peer-to-peer, echo cancellation and noise suppression on)
+- **Video and voice calls** (1-on-1, peer-to-peer, echo cancellation, high-quality Opus audio)
+- **AI background-noise removal**: keyboards, fans, TV, kids and dogs are filtered out of your mic (RNNoise or GTCRN, running on your own computer)
 - **Text chat**, including messages to friends who are offline (delivered when they sign in)
 - **Floating mini window**: minimize Parley during a call and a small always-on-top video of the other person stays on screen
 - **Screen sharing with computer sound**: pick a whole screen or a single window, and optionally share what your computer is playing (YouTube, Spotify, a game), with echo protection
-- **Watch together**: pick a video file and it streams live to your friend, sound included, while you both keep your cameras and chat
+- **Watch together**: pick a video file and it streams live to your friend in stereo, while you both keep your cameras and chat. Either of you can pause or skip.
+- **Your own ringtone**: pick a built-in tone or any sound file
+- **Open links in the browser you choose**, not just the system default (desktop app)
+- **Hideable contact bar** for more room
 - **Mac and Windows** desktop app. It also runs in Chrome or Edge at your server's URL, so a friend can join without installing anything.
 
 ```
@@ -81,8 +85,9 @@ Sign in with your **server address** (the Railway domain), **your name**, and th
 | **Call** | Open a contact, then the phone icon (voice) or camera icon (video) |
 | **Mini window** | Minimize Parley during a call. You get a floating video of your friend (or their shared movie). The ▣ button does the same. Double-click the mini window, or press ⤢, to return. |
 | **Share screen** | Click the monitor button and pick a screen or window. Leave **Share computer sound** ticked to include what your computer is playing. Click the button again to stop. |
-| **Watch together** | Click the film button and choose a video file. You control play, pause and seek. Your friend sees and hears it live, with a volume slider. "Stop sharing" ends it. |
-| **Devices** | The ⚙ gear picks camera, mic and speakers, and works mid-call too. |
+| **Watch together** | Click the film button and choose a video file. Your friend sees and hears it live. Either of you can use ⏯ and ±10 s. Each of you has your own volume slider. "Stop sharing" ends it. |
+| **Hide contacts** | The ▯ button left of the name, or **Ctrl+B** (⌘B on Mac). |
+| **Settings (⚙)** | Camera, mic and speakers (they also switch mid-call). **Background noise removal** (Standard, Strong or Off) with a **Hear yourself** test. **Call audio quality**. **Ringtone** and its volume. **Open links in** (desktop app). **Open log file** for troubleshooting. |
 | **Browser** | Friends can open your Railway URL in Chrome or Edge instead of installing. |
 
 Watch-together plays whatever Chromium can play: **.mp4 (H.264/AAC)** and **.webm** are safest. Some `.mkv` and HEVC files won't play. Convert them first with HandBrake or `ffmpeg -i in.mkv -c:v libx264 -c:a aac out.mp4`.
@@ -91,12 +96,18 @@ Watch-together plays whatever Chromium can play: **.mp4 (H.264/AAC)** and **.web
 
 ## Known limits (and why)
 
+- **Background-noise removal**: *Standard* (RNNoise) keeps your voice full-quality and removes most noise. *Strong* (GTCRN) removes more, like TV and music, but your voice sounds a little less crisp, because it works at telephone bandwidth internally. Use *Hear yourself* in Settings, with headphones, to compare.
+
 - **Computer sound needs Windows 10/11 or macOS 14.2 (Sonoma) or newer.** Older systems share the picture without sound and show a message.
 - **Echo guard:** Parley asks the OS to leave its own sound (your friend's voice) out of the shared sound. If the system can't confirm that, Parley turns on an *echo guard* instead: the shared sound briefly dips while your friend is talking, so they never hear themselves. You'll see a message when it's on.
 - **Headphones help** when sharing sound. Parley tells your mic to ignore everything your computer plays, but on some systems the mic may still pick up a little of the video from your speakers.
 - **One-on-one calls only.** Group calls need a media server (an SFU such as LiveKit). That's a reasonable v2.
 - **Chat history is stored on each device.** The server holds messages for offline friends in memory only, so a redeploy drops anything still undelivered. Adding Postgres to the server would fix this.
 - **Netflix, Disney+ and other DRM sites** show black when screen-shared; YouTube and most other sites work, sound included.
+
+## Troubleshooting
+
+The desktop app keeps a log at `%APPDATA%\Parley\parley.log` (Windows) or `~/Library/Application Support/Parley/parley.log` (Mac). **Settings → Open log file** opens it. Screen-share and noise-removal problems are written there with the exact error.
 
 ## Project layout
 
@@ -107,6 +118,8 @@ app/                     ← Electron desktop app
   main.js                ← window, mini-window/PiP, screen picker, permissions, notifications
   preload.js             ← safe bridge between UI and main process
   renderer/              ← UI + all calling/chat logic (also served to browsers)
+    vendor/noise/        ← AI noise-removal worklets + WASM (@sapphi-red/web-noise-suppressor, MIT)
   build/                 ← app icon, macOS entitlements
 .github/workflows/       ← builds Mac .dmg + Windows .exe
+tests/                   ← end-to-end tests (Electron ↔ Chrome), see tests/README.md
 ```

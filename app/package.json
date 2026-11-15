@@ -1,7 +1,7 @@
 {
   "name": "parley",
   "productName": "Parley",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Video calls, chat, screen sharing and watch-together for friends and family",
   "main": "main.js",
   "author": "Daylen",
@@ -13,6 +13,9 @@
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"
   },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
   "devDependencies": {
     "electron": "^45.3.2",
     "electron-builder": "^26.0.12"
@@ -23,13 +26,20 @@
     "files": [
       "main.js",
       "preload.js",
-      "renderer/**/*"
+      "renderer/**/*",
+      "assets/**/*"
     ],
     "mac": {
       "category": "public.app-category.social-networking",
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "universal"
           ]
@@ -60,11 +70,18 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Parley-Setup-${version}.${ext}"
     },
     "directories": {
       "output": "dist",
       "buildResources": "build"
-    }
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://parley.invalid/updates"
+      }
+    ]
   }
 }

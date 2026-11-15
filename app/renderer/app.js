@@ -23,6 +23,8 @@
     film: P('<rect x="2" y="2" width="20" height="20" rx="2.2"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5"/>'),
     mini: P('<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="7" height="5" rx="1" fill="currentColor"/>'),
     expand: P('<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>'),
+    fullscreen: P('<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>'),
+    fullscreenExit: P('<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>'),
     hangup: P('<path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 3.1 4.2 2 2 0 0 1 5.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L9 9.8"/><path d="M23 1L1 23"/>'),
     send: P('<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>'),
     volume: P('<path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
@@ -31,6 +33,17 @@
     pause: P('<rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/>'),
     back10: P('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="sans-serif" font-weight="700">10</text>'),
     fwd10: P('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="sans-serif" font-weight="700">10</text>'),
+    search: P('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),
+    download: P('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>'),
+    down: P('<path d="M12 5v14M19 12l-7 7-7-7"/>'),
+    paperclip: P('<path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>'),
+    smile: P('<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>'),
+    check: P('<path d="M20 6L9 17l-5-5"/>'),
+    checks: P('<path d="M18 6L7 17l-5-5M22 10l-7.5 7.5L13 16"/>'),
+    clock: P('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    alert: P('<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>'),
+    retry: P('<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/>'),
+    folder: P('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'),
   };
   const icon = (name) => ICONS[name] || '';
   const paintIcons = (root = document) =>
@@ -79,15 +92,6 @@
       .slice(0, 2)
       .map((w) => w[0].toUpperCase())
       .join('') || '?';
-  function paintAvatar(el, name, status) {
-    el.style.setProperty('--h', hue(name));
-    el.textContent = initials(name);
-    if (status) {
-      const dot = document.createElement('span');
-      dot.className = 'dot ' + (status === 'offline' ? '' : status);
-      el.appendChild(dot);
-    }
-  }
   const fmtTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const fmtDay = (ts) => {
     const d = new Date(ts);
@@ -96,6 +100,12 @@
     if (d.toDateString() === today.toDateString()) return 'Today';
     if (d.toDateString() === y.toDateString()) return 'Yesterday';
     return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+  const fmtShort = (ts) => {
+    const d = new Date(ts);
+    if (d.toDateString() === new Date().toDateString()) return fmtTime(ts);
+    if (Date.now() - ts < 6 * 864e5) return d.toLocaleDateString([], { weekday: 'short' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
   const fmtAgo = (ts) => {
     if (!ts) return 'Offline';
@@ -111,6 +121,13 @@
     const m = Math.floor((s % 3600) / 60);
     const ss = String(s % 60).padStart(2, '0');
     return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+  };
+  const fmtSize = (b) => {
+    if (!b && b !== 0) return '';
+    if (b < 1024) return `${b} B`;
+    if (b < 1048576) return `${Math.round(b / 1024)} KB`;
+    if (b < 1073741824) return `${(b / 1048576).toFixed(b < 10485760 ? 1 : 0)} MB`;
+    return `${(b / 1073741824).toFixed(1)} GB`;
   };
   let toastTimer;
   function toast(text, ms = 3500) {
@@ -153,6 +170,53 @@
     if (!document.hidden) return;
     if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body });
   }
+
+  // A message that's only 1–3 emoji is shown big, without a bubble.
+  const graphemes = (s) => (Intl.Segmenter ? [...new Intl.Segmenter().segment(s)].length : [...s].length);
+  function isJumbo(text) {
+    const t = String(text || '').replace(/\s+/g, '');
+    if (!t || t.length > 40) return false;
+    if (!/\p{Extended_Pictographic}/u.test(t)) return false;
+    const rest = t.replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}‍️⃣]/gu, '');
+    return !rest && graphemes(t) <= 3;
+  }
+
+  // ------------------------------------------------------------------ color schemes
+  const G = (a, b) => `linear-gradient(135deg, ${a}, ${b})`;
+  const THEMES = {
+    midnight: { name: 'Midnight', dark: true, bg: '#0d131a', panel: '#141c25', panel2: '#1a2430', hover: '#1f2b3a', active: '#1c3449', line: '#233041', text: '#e8eef5', muted: '#8a9aae', accent: '#2aa8f2', accent2: '#1688cc', me: G('#2b94dc', '#1f6fa8'), them: '#202c3a' },
+    light: { name: 'Daylight', dark: false, bg: '#f3f5f9', panel: '#ffffff', panel2: '#eef1f6', hover: '#e8edf4', active: '#dcecfc', line: '#e1e6ee', text: '#16202b', muted: '#667385', accent: '#1a8fe3', accent2: '#0f76c4', me: G('#2c9cf2', '#1678d0'), them: '#eceff4', themText: '#16202b', linkThem: '#0b6fc0', stage: '#0b0f14' },
+    graphite: { name: 'Graphite', dark: true, bg: '#111113', panel: '#19191c', panel2: '#222226', hover: '#2a2a2f', active: '#30303a', line: '#2b2b31', text: '#ececf0', muted: '#9898a3', accent: '#8b93ff', accent2: '#6e76f0', me: G('#8b93ff', '#6a62e8'), them: '#26262b', linkThem: '#b9beff' },
+    ocean: { name: 'Ocean', dark: true, bg: '#071519', panel: '#0c1f25', panel2: '#112a31', hover: '#15333b', active: '#10414a', line: '#1a3940', text: '#e2f3f3', muted: '#84a7ab', accent: '#1fc7b6', accent2: '#12a596', accentText: '#03201d', me: G('#17a99b', '#0e7a83'), them: '#15313a', linkThem: '#7ff0e4' },
+    forest: { name: 'Forest', dark: true, bg: '#0b130e', panel: '#111c15', panel2: '#17261c', hover: '#1c2e22', active: '#1d3b27', line: '#22362a', text: '#e6f1e8', muted: '#8ea494', accent: '#4cc674', accent2: '#36a95c', accentText: '#05200d', me: G('#3aa862', '#23804b'), them: '#1b2c21', linkThem: '#9be8b4' },
+    sunset: { name: 'Sunset', dark: true, bg: '#180f12', panel: '#211519', panel2: '#2b1b21', hover: '#342128', active: '#43232e', line: '#3a262d', text: '#f7ebe8', muted: '#b69c99', accent: '#ff7a59', accent2: '#f0603e', accentText: '#2a0c06', me: G('#f26b55', '#d6406f'), them: '#2f1f25', linkThem: '#ffb49e' },
+    grape: { name: 'Grape', dark: true, bg: '#110e1b', panel: '#181427', panel2: '#201b33', hover: '#272140', active: '#2f2550', line: '#2c2645', text: '#ece8f8', muted: '#9d95bb', accent: '#a77bff', accent2: '#8f5ff5', me: G('#9c6cff', '#7346e0'), them: '#241f38', linkThem: '#cdb6ff' },
+    rose: { name: 'Rose', dark: false, bg: '#fbf4f6', panel: '#ffffff', panel2: '#f8eaef', hover: '#f5e1e8', active: '#fbd9e5', line: '#f0dce3', text: '#2a1a20', muted: '#8b6d77', accent: '#e0457b', accent2: '#c9336a', me: G('#ef5a8c', '#d23c72'), them: '#f6e6ec', themText: '#2a1a20', linkThem: '#b0285a', stage: '#120a0d' },
+    oled: { name: 'Black', dark: true, bg: '#000000', panel: '#0a0a0a', panel2: '#141414', hover: '#1c1c1c', active: '#10283a', line: '#1f1f1f', text: '#f2f2f2', muted: '#8a8a8a', accent: '#2aa8f2', accent2: '#1688cc', me: G('#2b94dc', '#1f6fa8'), them: '#1a1a1a', stage: '#000000' },
+  };
+  const themeId = () => store.get('theme', 'midnight');
+  function resolveTheme(id) {
+    if (id === 'auto') return matchMedia('(prefers-color-scheme: light)').matches ? THEMES.light : THEMES.midnight;
+    return THEMES[id] || THEMES.midnight;
+  }
+  function applyTheme(id = themeId()) {
+    const t = resolveTheme(id);
+    const r = document.documentElement.style;
+    const vars = {
+      bg: t.bg, panel: t.panel, 'panel-2': t.panel2, hover: t.hover, active: t.active, line: t.line, text: t.text, muted: t.muted,
+      accent: t.accent, 'accent-2': t.accent2, 'accent-text': t.accentText || '#ffffff',
+      'accent-soft': `color-mix(in srgb, ${t.accent} ${t.dark ? 18 : 14}%, transparent)`,
+      'bubble-me': t.me, 'bubble-me-text': t.meText || '#ffffff', 'bubble-them': t.them, 'bubble-them-text': t.themText || t.text,
+      'link-me': t.linkMe || '#e6f4ff', 'link-them': t.linkThem || '#8fd2ff', stage: t.stage || '#05080b',
+      shadow: t.dark ? '0 18px 50px rgba(0,0,0,.45)' : '0 14px 40px rgba(30,40,60,.16)',
+    };
+    for (const [k, v] of Object.entries(vars)) r.setProperty('--' + k, v);
+    r.colorScheme = t.dark ? 'dark' : 'light';
+    document.documentElement.dataset.theme = id;
+    electron?.setTheme?.(t.dark, t.bg);
+  }
+  matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => themeId() === 'auto' && applyTheme());
+  applyTheme();
 
   // ------------------------------------------------------------------ sounds (generated, no files needed)
   // seq: [frequency, start (s), duration (s)]. env 'pluck' = fast attack + natural decay (bells, marimba).
@@ -317,6 +381,7 @@
     },
   };
 
+
   // ------------------------------------------------------------------ app state
   const S = {
     serverUrl: '',
@@ -329,20 +394,118 @@
     retry: 0,
     reconnectTimer: null,
     iceServers: [],
-    users: new Map(), // key -> {name, online, status, lastSeen}
+    users: new Map(), // key -> {name, online, status, lastSeen, avatarRev}
     active: null, // name of open conversation
     unread: store.get('unread', {}),
-    outbox: [],
+    outbox: [], // ws payloads typed while disconnected
     lastTypingSent: 0,
     typingTimer: null,
+    typingFrom: null,
+    limits: { maxFileMB: 100 },
+    readSent: {}, // peerKey -> newest ts we told them we've read
+    stick: true, // chat is scrolled to the newest message
   };
+
+  // ------------------------------------------------------------------ profile pictures
+  // Everyone's picture is cached here (key -> {rev, data}); the server only tells us a
+  // short "rev" in presence, and we ask for the image when it changes.
+  const Avatars = {
+    map: store.get('avatars', {}),
+    asked: new Set(),
+    get(name) {
+      return this.map[keyOf(name)]?.data || '';
+    },
+    save() {
+      store.set('avatars', this.map);
+    },
+    want(name, rev) {
+      const k = keyOf(name);
+      const have = this.map[k];
+      if (!rev) {
+        if (have) {
+          delete this.map[k];
+          this.save();
+          repaintAvatars();
+        }
+        return;
+      }
+      if (have?.rev === rev || this.asked.has(k + rev)) return;
+      this.asked.add(k + rev);
+      wsSend({ type: 'get-avatar', name });
+    },
+    got(name, rev, data) {
+      const k = keyOf(name);
+      if (data && rev) this.map[k] = { rev, data };
+      else delete this.map[k];
+      this.save();
+      repaintAvatars();
+    },
+  };
+  function paintAvatar(el, name, status) {
+    el.style.setProperty('--h', hue(name));
+    const img = Avatars.get(name);
+    el.classList.toggle('has-img', !!img);
+    el.style.backgroundImage = img ? `url("${img}")` : '';
+    el.textContent = initials(name);
+    if (status) {
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (status === 'offline' ? '' : status);
+      el.appendChild(dot);
+    }
+  }
+  function repaintAvatars() {
+    if (!S.signedIn) return;
+    paintAvatar($('#myAvatar'), S.me);
+    paintAvatar($('#settingsAvatar'), S.me);
+    renderContacts();
+    if (S.active) {
+      renderHeader();
+      MsgView.invalidate();
+      renderMessages(false);
+    }
+    if (Call.peer) {
+      const av = $('#remoteAvatar .avatar');
+      if (av) paintAvatar(av, Call.peer);
+    }
+  }
+  // Square-crop a picture to 256 px JPEG (~20–40 KB).
+  async function makeAvatar(file) {
+    const bmp = await createImageBitmap(file);
+    const s = Math.min(bmp.width, bmp.height);
+    const c = Object.assign(document.createElement('canvas'), { width: 256, height: 256 });
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 256, 256);
+    bmp.close?.();
+    let q = 0.88;
+    let url = c.toDataURL('image/jpeg', q);
+    while (url.length > 110 * 1024 && q > 0.4) url = c.toDataURL('image/jpeg', (q -= 0.12));
+    return url;
+  }
+  const myAvatarKey = () => `myAvatar:${keyOf(S.me)}`;
+  async function setMyAvatar(file) {
+    try {
+      const data = file ? await makeAvatar(file) : '';
+      store.set(myAvatarKey(), { data, rev: '' });
+      Avatars.got(S.me, data ? 'local' : '', data);
+      wsSend({ type: 'profile', avatar: data || null });
+    } catch (e) {
+      log('avatar failed', errText(e));
+      toast('Couldn’t use that picture.');
+    }
+  }
 
   // ------------------------------------------------------------------ history
   const histKey = (peer) => `hist:${keyOf(S.me)}:${keyOf(peer)}`;
   const histCache = new Map();
   function history(peer) {
     const k = histKey(peer);
-    if (!histCache.has(k)) histCache.set(k, store.get(k, []));
+    if (!histCache.has(k)) {
+      const h = store.get(k, []);
+      // an upload that was cut off by closing the app
+      for (const m of h) if (m.status === 'uploading') m.status = 'failed';
+      histCache.set(k, h);
+    }
     return histCache.get(k);
   }
   function saveHistory(peer) {
@@ -354,10 +517,18 @@
     rememberContact(peer);
     history(peer).push(entry);
     saveHistory(peer);
-    if (S.active && keyOf(S.active) === keyOf(peer)) renderMessages(true);
+    if (S.active && keyOf(S.active) === keyOf(peer)) renderMessages(entry.dir === 'out');
+  }
+  function findMessage(id) {
+    for (const [k, h] of histCache) {
+      const m = h.find((x) => x.id === id);
+      if (m) return { m, k, h };
+    }
+    return null;
   }
   function systemLine(peer, text) {
     addToHistory(peer, { id: uid(), system: true, text, ts: Date.now() });
+    renderContacts();
   }
   function rememberContact(name) {
     const k = `contacts:${keyOf(S.me)}`;
@@ -369,6 +540,12 @@
     if (!S.users.has(keyOf(name))) {
       S.users.set(keyOf(name), { name, online: false, status: 'offline', lastSeen: 0 });
     }
+  }
+  function previewOf(m) {
+    if (!m) return '';
+    if (m.system) return m.text;
+    let t = m.sticker ? 'Sticker' : m.file ? (m.file.sticker ? 'Sticker' : m.file.kind === 'image' ? '📷 Photo' : `📎 ${m.file.name}`) : m.text;
+    return (m.dir === 'out' ? 'You: ' : '') + String(t || '').replace(/\s+/g, ' ');
   }
 
   // ------------------------------------------------------------------ connection
@@ -402,7 +579,11 @@
       } catch {
         return;
       }
-      handleServer(msg);
+      try {
+        handleServer(msg);
+      } catch (err) {
+        log('handler error', msg.type, errText(err), err.stack);
+      }
     };
     ws.onclose = (ev) => {
       if (S.ws !== ws) return;
@@ -432,6 +613,8 @@
         S.signedIn = true;
         S.retry = 0;
         S.iceServers = msg.iceServers || [];
+        if (msg.limits) S.limits = msg.limits;
+        S.readSent = store.get(`readSent:${keyOf(S.me)}`, {});
         $('#connBanner').classList.add('hidden');
         if (first) {
           store.set('login', {
@@ -441,12 +624,17 @@
             auto: $('#autoLogin').checked,
           });
           showMain();
+          electron?.configureUpdates?.(S.serverUrl, S.code);
         }
+        // The server forgets pictures when it restarts; send ours again if needed.
+        const mine = store.get(myAvatarKey(), null);
+        if (mine?.data && mine.rev !== msg.avatarRev) wsSend({ type: 'profile', avatar: mine.data });
+        else if (!mine && msg.avatarRev) Avatars.want(S.me, msg.avatarRev);
         setUsers(msg.users);
         // resend anything typed while disconnected
-        const pending = S.outbox.splice(0);
-        for (const m of pending) wsSend({ type: 'chat', to: m.to, text: m.text, id: m.id });
+        for (const p of S.outbox.splice(0)) wsSend(p);
         if (Call.state !== 'idle') wsSend({ type: 'status', status: 'busy' });
+        if (S.active) sendRead(S.active);
         break;
       }
       case 'error':
@@ -462,37 +650,66 @@
           if (u && !u.online && Call.state !== 'active') Call.end(`${Call.peer} went offline`);
         }
         break;
+      case 'profile-ok': {
+        const mine = store.get(myAvatarKey(), { data: '' });
+        mine.rev = msg.avatarRev || '';
+        store.set(myAvatarKey(), mine);
+        Avatars.got(S.me, mine.rev, mine.data);
+        break;
+      }
+      case 'avatar':
+        Avatars.got(msg.name, msg.rev, msg.data);
+        break;
       case 'chat': {
         const peer = msg.from;
-        addToHistory(peer, { id: msg.id, from: msg.from, text: msg.text, ts: msg.ts, dir: 'in' });
+        const entry = { id: msg.id, from: msg.from, text: msg.file || msg.sticker ? '' : msg.text, ts: msg.ts, dir: 'in' };
+        if (msg.sticker) entry.sticker = msg.sticker;
+        if (msg.file) entry.file = { ...msg.file, key: `file:${msg.file.id}` };
+        if (history(peer).some((m) => m.id === msg.id)) break; // duplicate after reconnect
+        addToHistory(peer, entry);
+        if (entry.file && (entry.file.kind === 'image' || entry.file.sticker)) Files.ensure(entry);
         clearTyping();
-        const viewing = S.active && keyOf(S.active) === keyOf(peer) && !document.hidden;
+        const viewing = isViewing(peer);
         if (!viewing) {
           S.unread[keyOf(peer)] = (S.unread[keyOf(peer)] || 0) + 1;
           store.set('unread', S.unread);
-          notify(peer, msg.text.slice(0, 140));
-        }
+          notify(peer, previewOf(entry).slice(0, 140));
+          updateUnreadBadge();
+        } else sendRead(peer);
         Sound.blip();
         renderContacts();
         break;
       }
       case 'chat-ack': {
-        for (const k of [...histCache.keys()]) {
-          const h = histCache.get(k);
-          const m = h.find((x) => x.id === msg.id);
-          if (m) {
-            m.status = msg.delivered ? 'sent' : 'queued';
-            m.ts = msg.ts;
-            store.set(k, h);
-            if (S.active) renderMessages(false);
-            break;
+        const f = findMessage(msg.id);
+        if (f && f.m.status !== 'read') {
+          f.m.status = msg.delivered ? 'sent' : 'queued';
+          f.m.ts = msg.ts;
+          store.set(f.k, f.h);
+          if (S.active) renderMessages(false);
+        }
+        break;
+      }
+      case 'read': {
+        const h = history(msg.from);
+        let changed = false;
+        for (const m of h) {
+          if (m.dir === 'out' && m.ts <= msg.ts && (m.status === 'sent' || m.status === 'queued')) {
+            m.status = 'read';
+            changed = true;
           }
+        }
+        if (changed) {
+          saveHistory(msg.from);
+          if (S.active && keyOf(S.active) === keyOf(msg.from)) renderMessages(false);
         }
         break;
       }
       case 'typing':
         if (S.active && keyOf(S.active) === keyOf(msg.from)) {
-          $('#typing').textContent = `${msg.from} is typing…`;
+          S.typingFrom = msg.from;
+          $('#typing').textContent = `${msg.from} is typing`;
+          renderHeader();
           clearTimeout(S.typingTimer);
           S.typingTimer = setTimeout(clearTyping, 4000);
         }
@@ -505,7 +722,33 @@
         break;
     }
   }
-  const clearTyping = () => ($('#typing').textContent = '');
+  function clearTyping() {
+    $('#typing').textContent = '';
+    if (S.typingFrom) {
+      S.typingFrom = null;
+      if (S.active) renderHeader();
+    }
+  }
+
+  // ------------------------------------------------------------------ read receipts
+  const chatVisible = () => !document.hidden && !$('#convo').classList.contains('hidden') && !($('#convo').classList.contains('in-call') && $('#convo').classList.contains('chat-hidden'));
+  const isViewing = (peer) => S.active && keyOf(S.active) === keyOf(peer) && chatVisible();
+  function sendRead(peer) {
+    if (!peer || !isViewing(peer) || !store.get('readReceipts', true)) return;
+    let newest = 0;
+    for (const m of history(peer)) if (m.dir === 'in' && m.ts > newest) newest = m.ts;
+    const k = keyOf(peer);
+    if (!newest || newest <= (S.readSent[k] || 0)) return;
+    S.readSent[k] = newest;
+    store.set(`readSent:${keyOf(S.me)}`, S.readSent);
+    const payload = { type: 'read', to: peer, ts: newest };
+    if (!wsSend(payload)) S.outbox.push(payload);
+  }
+  function updateUnreadBadge() {
+    const n = Object.values(S.unread).reduce((a, b) => a + (b || 0), 0);
+    electron?.setUnread?.(n);
+    document.title = n ? `(${n}) Parley` : 'Parley';
+  }
 
   // ------------------------------------------------------------------ login / main
   function loginError(t) {
@@ -548,9 +791,12 @@
     $('#main').classList.remove('hidden');
     $('#loginBtn').disabled = false;
     $('#myName').textContent = S.me;
+    const mine = store.get(myAvatarKey(), null);
+    if (mine?.data) Avatars.map[keyOf(S.me)] = { rev: mine.rev || 'local', data: mine.data };
     paintAvatar($('#myAvatar'), S.me);
     for (const n of store.get(`contacts:${keyOf(S.me)}`, [])) rememberContact(n);
     renderContacts();
+    updateUnreadBadge();
     const last = store.get(`lastActive:${keyOf(S.me)}`);
     if (last) openConvo(last);
   }
@@ -570,6 +816,7 @@
     }
     S.users.clear();
     histCache.clear();
+    MsgView.invalidate();
     S.active = null;
     $('#main').classList.add('hidden');
     $('#login').classList.remove('hidden');
@@ -581,6 +828,7 @@
       if (keyOf(u.name) === keyOf(S.me)) continue;
       S.users.set(keyOf(u.name), u);
       rememberContact(u.name);
+      Avatars.want(u.name, u.avatarRev);
     }
     renderContacts();
     if (S.active) renderHeader();
@@ -590,36 +838,61 @@
     if (u.online) return u.status === 'busy' ? 'In a call' : 'Online';
     return fmtAgo(u.lastSeen);
   }
+  function lastOf(name) {
+    const h = history(name);
+    return h.length ? h[h.length - 1] : null;
+  }
   function renderContacts() {
     const q = keyOf($('#search').value);
     const ul = $('#contacts');
     ul.innerHTML = '';
     const list = [...S.users.values()]
       .filter((u) => keyOf(u.name) !== keyOf(S.me) && (!q || keyOf(u.name).includes(q)))
-      .sort((a, b) => b.online - a.online || (S.unread[keyOf(b.name)] || 0) - (S.unread[keyOf(a.name)] || 0) || a.name.localeCompare(b.name));
-    for (const u of list) {
+      .map((u) => ({ u, last: lastOf(u.name) }))
+      .sort(
+        (a, b) =>
+          (S.unread[keyOf(b.u.name)] ? 1 : 0) - (S.unread[keyOf(a.u.name)] ? 1 : 0) ||
+          (b.last?.ts || 0) - (a.last?.ts || 0) ||
+          b.u.online - a.u.online ||
+          a.u.name.localeCompare(b.u.name)
+      );
+    for (const { u, last } of list) {
       const li = document.createElement('li');
-      if (S.active && keyOf(S.active) === keyOf(u.name)) li.className = 'active';
+      const n = S.unread[keyOf(u.name)];
+      if (S.active && keyOf(S.active) === keyOf(u.name)) li.classList.add('active');
+      if (n) li.classList.add('unread');
       const av = document.createElement('div');
       av.className = 'avatar';
       paintAvatar(av, u.name, u.online ? u.status : 'offline');
       const tx = document.createElement('div');
       tx.className = 'c-text';
+      const top = document.createElement('div');
+      top.className = 'c-top';
       const nm = document.createElement('div');
       nm.className = 'c-name';
       nm.textContent = u.name;
+      top.append(nm);
+      if (last) {
+        const tm = document.createElement('span');
+        tm.className = 'c-time';
+        tm.textContent = fmtShort(last.ts);
+        top.append(tm);
+      }
+      const bottom = document.createElement('div');
+      bottom.className = 'c-bottom';
       const st = document.createElement('div');
-      st.className = 'c-status';
-      st.textContent = statusText(u);
-      tx.append(nm, st);
-      li.append(av, tx);
-      const n = S.unread[keyOf(u.name)];
+      st.className = 'c-preview';
+      st.textContent = last ? previewOf(last) : statusText(u);
+      bottom.append(st);
       if (n) {
         const b = document.createElement('span');
         b.className = 'badge';
         b.textContent = n > 99 ? '99+' : n;
-        li.append(b);
+        bottom.append(b);
       }
+      tx.append(top, bottom);
+      li.append(av, tx);
+      li.title = `${u.name} · ${statusText(u)}`;
       li.addEventListener('click', () => openConvo(u.name));
       ul.append(li);
     }
@@ -627,65 +900,189 @@
 
   // ------------------------------------------------------------------ conversation
   function openConvo(name) {
+    const changed = !S.active || keyOf(S.active) !== keyOf(name);
     S.active = name;
     store.set(`lastActive:${keyOf(S.me)}`, name);
     delete S.unread[keyOf(name)];
     store.set('unread', S.unread);
+    updateUnreadBadge();
     $('#empty').classList.add('hidden');
     $('#convo').classList.remove('hidden');
-    clearTyping();
+    if (changed) {
+      clearTyping();
+      MsgView.invalidate();
+      Picker.close();
+    }
     renderHeader();
     renderContacts();
     renderMessages(true);
+    sendRead(name);
     if (Call.state === 'idle') $('#msgInput').focus();
   }
   function renderHeader() {
     const u = S.users.get(keyOf(S.active)) || { name: S.active, online: false };
     $('#peerName').textContent = u.name;
-    $('#peerStatus').textContent = statusText(u);
-    const av = $('#peerAvatar');
-    paintAvatar(av, u.name, u.online ? u.status : 'offline');
+    const ps = $('#peerStatus');
+    const typing = S.typingFrom && keyOf(S.typingFrom) === keyOf(S.active);
+    ps.textContent = typing ? 'typing…' : statusText(u);
+    ps.classList.toggle('typing-now', !!typing);
+    paintAvatar($('#peerAvatar'), u.name, u.online ? u.status : 'offline');
     const canCall = u.online && Call.state === 'idle';
     $('#audioCallBtn').disabled = !canCall;
     $('#videoCallBtn').disabled = !canCall;
   }
-  function renderMessages(scroll) {
-    const box = $('#messages');
-    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    box.innerHTML = '';
+
+  // ---- message list
+  // Messages are rendered from history; each message's DOM node is reused while it hasn't
+  // changed (so photos don't flicker or reload). The list sticks to the bottom: new
+  // messages, photos finishing loading, the window resizing — all keep you at the newest
+  // message unless you've scrolled up, in which case a "New messages" pill appears.
+  const MsgView = {
+    nodes: new Map(), // id -> {sig, node}
+    invalidate() {
+      this.nodes.clear();
+    },
+  };
+  const box = () => $('#messages');
+  function atBottom() {
+    const b = box();
+    return b.scrollHeight - b.scrollTop - b.clientHeight < 60;
+  }
+  function scrollToBottom() {
+    const b = box();
+    b.scrollTop = b.scrollHeight;
+    S.stick = true;
+    $('#jumpBtn').classList.add('hidden');
+  }
+  const GROUP_MS = 3 * 60 * 1000;
+  function renderMessages(forceBottom) {
+    if (!S.active) return;
+    const list = $('#msgList');
+    const h = history(S.active);
+    const wasStuck = S.stick || forceBottom;
+    const prevCount = list.querySelectorAll('.msg.in').length;
+    // newest outgoing message the other person has seen
+    let seenId = null;
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (h[i].dir === 'out' && h[i].status === 'read') {
+        seenId = h[i].id;
+        break;
+      }
+    }
+    const out = [];
     let lastDay = '';
-    for (const m of history(S.active)) {
+    for (let i = 0; i < h.length; i++) {
+      const m = h[i];
       const day = fmtDay(m.ts);
       if (day !== lastDay) {
         const d = document.createElement('div');
         d.className = 'day';
         d.textContent = day;
-        box.append(d);
+        out.push(d);
         lastDay = day;
       }
       if (m.system) {
         const s = document.createElement('div');
         s.className = 'sys';
         s.textContent = `${m.text} · ${fmtTime(m.ts)}`;
-        box.append(s);
+        out.push(s);
         continue;
       }
-      const wrap = document.createElement('div');
-      wrap.className = 'msg ' + (m.dir === 'in' ? 'in' : 'out');
+      const prev = h[i - 1];
+      const next = h[i + 1];
+      const same = (a, b) => a && b && !a.system && !b.system && a.dir === b.dir && Math.abs(a.ts - b.ts) < GROUP_MS && fmtDay(a.ts) === fmtDay(b.ts);
+      const first = !same(prev, m);
+      const last = !same(m, next);
+      const seen = m.id === seenId;
+      const f = m.file;
+      const sig = [m.status, first, last, seen, f?.id, f?.gone, f?.saved, m.failed, Avatars.get(m.dir === 'in' ? S.active : '').length].join('|');
+      let cached = MsgView.nodes.get(m.id);
+      if (!cached || cached.sig !== sig) {
+        cached = { sig, node: buildMessage(m, { first, last, seen }) };
+        MsgView.nodes.set(m.id, cached);
+      }
+      out.push(cached.node);
+    }
+    list.replaceChildren(...out);
+    const newIn = list.querySelectorAll('.msg.in').length > prevCount && prevCount > 0;
+    if (wasStuck) scrollToBottom();
+    else if (newIn) {
+      $('#jumpText').textContent = 'New messages';
+      $('#jumpBtn').classList.remove('hidden');
+    }
+  }
+
+  function tickFor(m) {
+    const t = document.createElement('span');
+    t.className = 'tick';
+    const map = { sending: ['clock', 'Sending…'], uploading: ['clock', 'Uploading…'], queued: ['check', 'Sent — they’ll get it when they come online'], sent: ['checks', 'Delivered'], read: ['checks', 'Seen'] };
+    const [ic, title] = map[m.status] || map.sent;
+    t.innerHTML = icon(ic);
+    t.title = title;
+    if (m.status === 'read') t.classList.add('read');
+    return t;
+  }
+
+  function buildMessage(m, { first, last, seen }) {
+    const wrap = document.createElement('div');
+    wrap.className = `msg ${m.dir === 'in' ? 'in' : 'out'}${first ? ' first' : ''}${last ? ' last has-meta' : ''}`;
+    wrap.dataset.id = m.id;
+    wrap.title = fmtTime(m.ts);
+    if (m.dir === 'in') {
+      const av = document.createElement('div');
+      av.className = 'avatar mini-avatar';
+      paintAvatar(av, m.from || S.active);
+      wrap.append(av);
+    }
+    const f = m.file;
+    if (m.sticker) {
+      const st = (window.PARLEY_STICKERS || []).find((s) => s.id === m.sticker);
+      const img = document.createElement('img');
+      img.className = 'sticker';
+      img.alt = st ? st.name : 'Sticker';
+      img.src = st ? st.src : '';
+      wrap.append(img);
+    } else if (f && (f.kind === 'image' || f.sticker)) {
+      wrap.append(Files.photo(m));
+    } else if (f) {
+      wrap.append(Files.card(m));
+    } else {
       const b = document.createElement('div');
       b.className = 'bubble';
-      linkify(b, m.text);
+      if (isJumbo(m.text)) {
+        b.classList.add('jumbo');
+        b.textContent = m.text.trim();
+      } else linkify(b, m.text || '');
+      wrap.append(b);
+    }
+    if (last) {
       const meta = document.createElement('div');
       meta.className = 'meta';
-      let st = '';
-      if (m.dir !== 'in') {
-        st = { sending: ' · Sending…', queued: ' · Will deliver when they’re online', sent: '' }[m.status] || '';
+      if (m.status === 'failed') {
+        meta.innerHTML = `<span class="tick">${icon('alert')}</span>`;
+        const r = document.createElement('button');
+        r.className = 'btn small';
+        r.textContent = 'Not sent · Retry';
+        r.onclick = () => Files.retry(m);
+        meta.append(r);
+      } else {
+        meta.append(fmtTime(m.ts));
+        if (m.dir === 'out') meta.append(tickFor(m));
       }
-      meta.textContent = fmtTime(m.ts) + st;
-      wrap.append(b, meta);
-      box.append(wrap);
+      wrap.append(meta);
     }
-    if (scroll || nearBottom) box.scrollTop = box.scrollHeight;
+    if (seen) {
+      const s = document.createElement('div');
+      s.className = 'seen';
+      s.textContent = 'Seen';
+      wrap.append(s);
+    }
+    return wrap;
+  }
+
+  function sendPayload(m, extra) {
+    const payload = { type: 'chat', to: m.to, id: m.id, text: m.text || '', ...extra };
+    if (!wsSend(payload)) S.outbox.push(payload);
   }
   function sendChat() {
     const input = $('#msgInput');
@@ -693,15 +1090,482 @@
     if (!text.trim() || !S.active) return;
     const m = { id: uid(), from: S.me, to: S.active, text, ts: Date.now(), dir: 'out', status: 'sending' };
     addToHistory(S.active, m);
-    if (!wsSend({ type: 'chat', to: m.to, text: m.text, id: m.id })) S.outbox.push(m);
+    sendPayload(m);
     input.value = '';
     autoGrow();
+    Picker.close();
+    renderContacts();
+  }
+  function sendSticker(id) {
+    if (!S.active) return;
+    const st = (window.PARLEY_STICKERS || []).find((s) => s.id === id);
+    const m = { id: uid(), from: S.me, to: S.active, text: '', sticker: id, ts: Date.now(), dir: 'out', status: 'sending' };
+    addToHistory(S.active, m);
+    sendPayload(m, { text: `[${st ? st.name : 'Sticker'} sticker]`, sticker: id });
+    renderContacts();
   }
   function autoGrow() {
     const t = $('#msgInput');
     t.style.height = 'auto';
     t.style.height = Math.min(140, t.scrollHeight) + 'px';
   }
+
+  // ------------------------------------------------------------------ photos & files
+  // Upload: the file goes to the server over HTTP (with a progress bar), then a small chat
+  // message carries its id. Photos are shrunk to ≤2048 px first. Everything you send or
+  // receive is also kept on this computer (IndexedDB) so it still shows after the server's
+  // copy expires.
+  const blobUrls = new Map(); // key -> object URL
+  const Files = {
+    downloads: new Map(), // key -> Promise<Blob|null>
+    photoEls: new Map(), // key -> element (reused across renders)
+
+    headers() {
+      return { 'x-parley-code': S.code, 'x-parley-name': S.me || '' };
+    },
+    async blob(key) {
+      const v = await FileStore.get(key).catch(() => null);
+      return v && v.blob ? v.blob : null;
+    },
+    async url(key) {
+      if (blobUrls.has(key)) return blobUrls.get(key);
+      const b = await this.blob(key);
+      if (!b) return null;
+      const u = URL.createObjectURL(b);
+      blobUrls.set(key, u);
+      return u;
+    },
+    fitSize(f, max = 280, maxH = 300) {
+      const w = f.w || 320;
+      const h = f.h || 240;
+      const s = Math.min(1, max / w, maxH / h);
+      return { w: Math.max(60, Math.round(w * s)), h: Math.max(48, Math.round(h * s)) };
+    },
+
+    // ---- sending
+    async prepare(file, sticker) {
+      const type = file.type || '';
+      if (!/^image\/(jpeg|png|webp|gif|bmp|avif)$/.test(type)) return { blob: file, name: file.name, type: type || 'application/octet-stream', kind: 'file' };
+      let bmp;
+      try {
+        bmp = await createImageBitmap(file);
+      } catch {
+        return { blob: file, name: file.name, type, kind: 'file' };
+      }
+      const w = bmp.width;
+      const h = bmp.height;
+      const gif = type === 'image/gif';
+      const max = sticker ? 320 : 2048;
+      const big = Math.max(w, h) > max;
+      const heavy = file.size > (sticker ? 400e3 : 1.5e6);
+      if (gif || (!big && !heavy)) {
+        bmp.close?.();
+        return { blob: file, name: file.name || 'photo', type, kind: 'image', w, h };
+      }
+      const s = Math.min(1, max / Math.max(w, h));
+      const c = Object.assign(document.createElement('canvas'), { width: Math.round(w * s), height: Math.round(h * s) });
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(bmp, 0, 0, c.width, c.height);
+      bmp.close?.();
+      const keepAlpha = sticker || type === 'image/png' || type === 'image/webp';
+      const outType = keepAlpha ? 'image/webp' : 'image/jpeg';
+      const blob = await new Promise((r) => c.toBlob(r, outType, 0.86));
+      const base = (file.name || 'photo').replace(/\.[^.]+$/, '');
+      return { blob, name: `${base}.${keepAlpha ? 'webp' : 'jpg'}`, type: outType, kind: 'image', w: c.width, h: c.height };
+    },
+
+    async send(file, { sticker = false, to = S.active } = {}) {
+      if (!to) return;
+      const maxB = (S.limits.maxFileMB || 100) * 1048576;
+      if (file.size > maxB) return toast(`${file.name || 'That file'} is too big (max ${S.limits.maxFileMB} MB).`, 5000);
+      const p = await this.prepare(file, sticker);
+      const id = uid();
+      const key = `f:${id}`;
+      await FileStore.put(key, { blob: p.blob, name: p.name }).catch((e) => log('local file save failed', errText(e)));
+      const m = {
+        id, from: S.me, to, text: '', ts: Date.now(), dir: 'out', status: 'uploading',
+        file: { key, name: p.name, size: p.blob.size, type: p.type, kind: p.kind, w: p.w, h: p.h, sticker },
+      };
+      addToHistory(to, m);
+      renderContacts();
+      this.upload(m, p.blob);
+    },
+
+    upload(m, blob) {
+      const f = m.file;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', S.serverUrl + '/files');
+      for (const [k, v] of Object.entries(this.headers())) xhr.setRequestHeader(k, v);
+      xhr.setRequestHeader('x-file-name', encodeURIComponent(f.name));
+      xhr.setRequestHeader('x-file-type', f.type || 'application/octet-stream');
+      xhr.setRequestHeader('content-type', 'application/octet-stream');
+      xhr.upload.onprogress = (e) => e.lengthComputable && this.progress(m.id, e.loaded / e.total);
+      const fail = (why) => {
+        log('upload failed', f.name, why);
+        m.status = 'failed';
+        saveHistory(m.to);
+        if (S.active && keyOf(S.active) === keyOf(m.to)) renderMessages(false);
+        toast(why === 413 ? `${f.name} is too big for the server.` : `Couldn’t send ${f.name}. Check your connection and press Retry.`, 5000);
+      };
+      xhr.onerror = () => fail('network');
+      xhr.onload = () => {
+        if (xhr.status !== 200) return fail(xhr.status);
+        let res;
+        try {
+          res = JSON.parse(xhr.responseText);
+        } catch {
+          return fail('bad reply');
+        }
+        f.id = res.id;
+        m.status = 'sending';
+        saveHistory(m.to);
+        // also keep it under the shared key so it survives in this device's cache
+        this.blob(f.key).then((b) => b && FileStore.put(`file:${res.id}`, { blob: b, name: f.name }).catch(() => {}));
+        const label = f.sticker ? '[Sticker]' : f.kind === 'image' ? '📷 Photo' : `📎 ${f.name} (${fmtSize(f.size)})`;
+        sendPayload(m, { text: label, file: { id: res.id, kind: f.kind, w: f.w, h: f.h, sticker: !!f.sticker } });
+        if (S.active && keyOf(S.active) === keyOf(m.to)) renderMessages(false);
+      };
+      xhr.send(blob);
+    },
+    async retry(m) {
+      const b = await this.blob(m.file?.key);
+      if (!b) return toast('That file isn’t on this computer any more.');
+      m.status = 'uploading';
+      saveHistory(m.to);
+      renderMessages(false);
+      this.upload(m, b);
+    },
+    progress(id, frac) {
+      const bar = document.querySelector(`.msg[data-id="${CSS.escape(id)}"] .progress > div`);
+      if (bar) bar.style.width = Math.round(frac * 100) + '%';
+    },
+
+    // ---- receiving
+    ensure(m) {
+      const f = m.file;
+      if (!f || !f.id) return Promise.resolve(null);
+      if (this.downloads.has(f.key)) return this.downloads.get(f.key);
+      const job = (async () => {
+        const have = await this.blob(f.key);
+        if (have) return have;
+        const r = await fetch(`${S.serverUrl}/files/${f.id}`, { headers: this.headers() });
+        if (r.status === 404) {
+          f.gone = true;
+          saveHistory(m.dir === 'in' ? m.from : m.to);
+          return null;
+        }
+        if (!r.ok) throw new Error('download failed ' + r.status);
+        const total = Number(r.headers.get('content-length')) || f.size || 0;
+        const reader = r.body.getReader();
+        const parts = [];
+        let got = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parts.push(value);
+          got += value.length;
+          if (total) this.progress(m.id, got / total);
+        }
+        const b = new Blob(parts, { type: f.type || 'application/octet-stream' });
+        // cache photos/stickers (and files up to 50 MB) on this computer
+        if (f.kind === 'image' || f.sticker || b.size < 50e6) await FileStore.put(f.key, { blob: b, name: f.name }).catch(() => {});
+        return b;
+      })().catch((e) => {
+        log('download failed', f.name, errText(e));
+        this.downloads.delete(f.key);
+        return null;
+      });
+      this.downloads.set(f.key, job);
+      return job;
+    },
+
+    photo(m) {
+      const f = m.file;
+      const key = f.key;
+      let el = this.photoEls.get(key);
+      const size = f.sticker ? this.fitSize(f, 150, 150) : this.fitSize(f);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = f.sticker ? 'photo sticker-photo loading' : 'photo loading';
+        el.style.width = size.w + 'px';
+        el.style.height = size.h + 'px';
+        this.photoEls.set(key, el);
+        const show = (u) => {
+          if (!u) return;
+          const img = new Image();
+          img.alt = f.name || '';
+          img.onload = () => el.classList.remove('loading');
+          img.src = u;
+          if (f.sticker) {
+            img.style.objectFit = 'contain';
+            el.style.background = 'none';
+            el.style.cursor = 'default';
+          }
+          el.replaceChildren(img);
+        };
+        this.url(key).then(async (u) => {
+          if (u) return show(u);
+          if (m.dir === 'in' || f.id) {
+            const b = await this.ensure(m);
+            if (b) show(await this.url(key));
+            else if (f.gone) {
+              el.classList.remove('loading');
+              el.classList.add('gone');
+              el.innerHTML = '<span class="gone-text">Photo expired on the server</span>';
+            }
+          }
+        });
+        if (!f.sticker) el.addEventListener('click', () => !f.gone && Lightbox.open(m));
+      }
+      // upload progress bar while sending
+      const bar = el.querySelector('.progress');
+      if (m.status === 'uploading' && !bar) el.insertAdjacentHTML('beforeend', '<div class="progress"><div></div></div>');
+      else if (m.status !== 'uploading' && bar) bar.remove();
+      return el;
+    },
+
+    card(m) {
+      const f = m.file;
+      const card = document.createElement('div');
+      card.className = 'file-card' + (f.gone ? ' gone' : '');
+      const ext = (f.name.match(/\.([a-z0-9]{1,5})$/i) || [, 'file'])[1];
+      card.innerHTML = `<div class="file-icon">${ext}</div><div class="file-info"><div class="file-name"></div><div class="file-sub"></div></div>`;
+      card.querySelector('.file-name').textContent = f.name;
+      const sub = card.querySelector('.file-sub');
+      sub.textContent = fmtSize(f.size) + (f.gone ? ' · expired on the server' : '');
+      if (f.saved && electron) {
+        const o = document.createElement('button');
+        o.textContent = 'Open';
+        o.onclick = () => electron.openPath(f.saved);
+        const s = document.createElement('button');
+        s.textContent = 'Show in folder';
+        s.onclick = () => electron.showInFolder(f.saved);
+        sub.append(' · Saved', o, s);
+      }
+      if (!f.gone && m.status !== 'uploading') {
+        const dl = document.createElement('button');
+        dl.className = 'icon-btn';
+        dl.title = electron ? 'Save to Downloads' : 'Download';
+        dl.innerHTML = icon('download');
+        dl.onclick = () => this.download(m, dl);
+        card.append(dl);
+      }
+      if (m.status === 'uploading') card.insertAdjacentHTML('beforeend', '<div class="progress"><div></div></div>');
+      return card;
+    },
+
+    async download(m, btn) {
+      const f = m.file;
+      if (btn) btn.disabled = true;
+      const card = btn?.closest('.file-card');
+      if (card && !card.querySelector('.progress')) card.insertAdjacentHTML('beforeend', '<div class="progress"><div></div></div>');
+      const b = m.dir === 'out' ? (await this.blob(f.key)) || (await this.ensure(m)) : await this.ensure(m);
+      if (!b) {
+        if (btn) btn.disabled = false;
+        card?.querySelector('.progress')?.remove();
+        if (f.gone) renderMessages(false);
+        return toast(f.gone ? 'That file has expired on the server.' : 'Download failed. Try again.');
+      }
+      await this.saveBlob(b, f.name, m);
+    },
+    async saveBlob(b, name, m) {
+      if (electron?.saveDownload) {
+        try {
+          const p = await electron.saveDownload(name, await b.arrayBuffer());
+          if (m?.file) {
+            m.file.saved = p;
+            saveHistory(m.dir === 'in' ? m.from : m.to);
+            renderMessages(false);
+          }
+          toast(`Saved to Downloads: ${p.split(/[\\/]/).pop()}`);
+        } catch (e) {
+          log('save failed', errText(e));
+          toast('Couldn’t save the file.');
+        }
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = name || 'file';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    },
+    sendMany(list) {
+      for (const f of list) this.send(f);
+    },
+  };
+
+  const Lightbox = {
+    m: null,
+    async open(m) {
+      this.m = m;
+      const u = await Files.url(m.file.key);
+      if (!u) return;
+      $('#lightboxImg').src = u;
+      $('#lightboxName').textContent = `${m.file.name} · ${fmtSize(m.file.size)}`;
+      $('#lightbox').classList.remove('hidden');
+    },
+    close() {
+      $('#lightbox').classList.add('hidden');
+      $('#lightboxImg').removeAttribute('src');
+      this.m = null;
+    },
+    async save() {
+      if (!this.m) return;
+      const b = await Files.blob(this.m.file.key);
+      if (b) Files.saveBlob(b, this.m.file.name, null);
+    },
+  };
+
+  // ------------------------------------------------------------------ emoji & sticker picker
+  const Picker = {
+    built: false,
+    open() {
+      if (!this.built) this.build();
+      this.renderStickers();
+      this.renderRecent();
+      $('#picker').classList.remove('hidden');
+    },
+    close() {
+      $('#picker').classList.add('hidden');
+    },
+    toggle() {
+      $('#picker').classList.contains('hidden') ? this.open() : this.close();
+    },
+    tab(name) {
+      document.querySelectorAll('#picker .tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+      $('#pickerEmoji').classList.toggle('hidden', name !== 'emoji');
+      $('#pickerStickers').classList.toggle('hidden', name !== 'stickers');
+      store.set('pickerTab', name);
+    },
+    grid(list) {
+      const g = document.createElement('div');
+      g.className = 'emoji-grid';
+      for (const e of list) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = e;
+        b.onclick = () => this.insert(e);
+        g.append(b);
+      }
+      return g;
+    },
+    build() {
+      this.built = true;
+      const body = $('#pickerEmoji');
+      body.innerHTML = '';
+      const rec = document.createElement('div');
+      rec.id = 'recentEmoji';
+      body.append(rec);
+      for (const c of window.PARLEY_EMOJI || []) {
+        const l = document.createElement('div');
+        l.className = 'cat-label';
+        l.textContent = c.label;
+        body.append(l, this.grid(c.list.split(' ').filter(Boolean)));
+      }
+      this.tab(store.get('pickerTab', 'emoji'));
+    },
+    renderRecent() {
+      const rec = $('#recentEmoji');
+      if (!rec) return;
+      const list = store.get('recentEmoji', []);
+      rec.innerHTML = '';
+      if (!list.length) return;
+      const l = document.createElement('div');
+      l.className = 'cat-label';
+      l.textContent = 'Recently used';
+      rec.append(l, this.grid(list));
+    },
+    insert(e) {
+      const t = $('#msgInput');
+      const s = t.selectionStart ?? t.value.length;
+      const end = t.selectionEnd ?? s;
+      t.value = t.value.slice(0, s) + e + t.value.slice(end);
+      t.selectionStart = t.selectionEnd = s + e.length;
+      t.focus();
+      autoGrow();
+      const list = store.get('recentEmoji', []).filter((x) => x !== e);
+      list.unshift(e);
+      store.set('recentEmoji', list.slice(0, 16));
+    },
+    async renderStickers() {
+      const body = $('#pickerStickers');
+      body.innerHTML = '';
+      const mineLabel = document.createElement('div');
+      mineLabel.className = 'cat-label';
+      mineLabel.textContent = 'Your stickers';
+      const mine = document.createElement('div');
+      mine.className = 'sticker-grid';
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'add';
+      add.textContent = '+ Add your own';
+      add.title = 'Any picture or GIF (PNG with a transparent background looks best)';
+      add.onclick = () => {
+        $('#stickerFile').value = '';
+        $('#stickerFile').click();
+      };
+      mine.append(add);
+      for (const s of store.get('myStickers', [])) {
+        const u = await Files.url(`sticker:${s.id}`);
+        if (!u) continue;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = 'Send';
+        b.innerHTML = `<img alt="">`;
+        b.querySelector('img').src = u;
+        b.onclick = () => this.sendCustom(s);
+        const del = document.createElement('span');
+        del.className = 'del';
+        del.textContent = '×';
+        del.title = 'Remove from your stickers';
+        del.onclick = (ev) => {
+          ev.stopPropagation();
+          store.set('myStickers', store.get('myStickers', []).filter((x) => x.id !== s.id));
+          this.renderStickers();
+        };
+        b.append(del);
+        mine.append(b);
+      }
+      const pipLabel = document.createElement('div');
+      pipLabel.className = 'cat-label';
+      pipLabel.textContent = 'Pip';
+      const pips = document.createElement('div');
+      pips.className = 'sticker-grid';
+      for (const s of window.PARLEY_STICKERS || []) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = s.name;
+        b.innerHTML = `<img alt="">`;
+        b.querySelector('img').src = s.src;
+        b.onclick = () => {
+          sendSticker(s.id);
+          this.close();
+        };
+        pips.append(b);
+      }
+      body.append(pipLabel, pips, mineLabel, mine);
+    },
+    async addCustom(file) {
+      if (!/^image\//.test(file.type)) return toast('Stickers need to be a picture or GIF.');
+      if (file.size > 4e6) return toast('That sticker is too big (4 MB max).');
+      const p = await Files.prepare(file, true);
+      const id = uid();
+      await FileStore.put(`sticker:${id}`, { blob: p.blob, name: p.name });
+      const list = store.get('myStickers', []);
+      list.unshift({ id, w: p.w, h: p.h, type: p.type, name: p.name });
+      store.set('myStickers', list.slice(0, 60));
+      this.renderStickers();
+      this.tab('stickers');
+    },
+    async sendCustom(s) {
+      const b = await Files.blob(`sticker:${s.id}`);
+      if (!b) return;
+      this.close();
+      Files.send(new File([b], s.name || 'sticker.png', { type: s.type || b.type }), { sticker: true });
+    },
+  };
 
   // ------------------------------------------------------------------ media helpers
   function blackVideoTrack() {
@@ -1002,6 +1866,7 @@
       $('#incoming').classList.remove('hidden');
       Sound.ring();
       electron?.attention();
+      electron?.incomingCall?.();
       notify('Incoming call', `${from} is calling you`);
       this.setBusy(true);
       this.timers.ring = setTimeout(() => {
@@ -1221,6 +2086,7 @@
         this.setStatus('');
         if (!this.everConnected) {
           this.everConnected = true;
+          Idle.wake();
           this.state = 'active';
           this.startedAt = Date.now();
           this.timers.clock = setInterval(() => (el.timer.textContent = fmtDur(Date.now() - this.startedAt)), 1000);
@@ -1427,20 +2293,24 @@
         if (electron) {
           const pick = await pickScreenSource();
           if (!pick) return;
-          wantedSound = pick.withAudio;
-          log('screen share: start', pick.id, wantedSound ? 'with sound' : 'no sound');
+          wantedSound = !!pick.audio;
+          log('screen share: start', pick.id, pick.audio ? `sound: ${pick.audio}` : 'no sound');
           this.setStatus('Starting screen share…');
-          // Try: sound with our settings → sound with defaults → picture only.
-          const attempts = wantedSound ? [audioC, true, false] : [false];
+          // Try, in order: computer sound WITHOUT Parley's own sound (no echo) → all computer
+          // sound with our settings → with defaults → picture only.
+          const attempts = [];
+          if (pick.audio === 'exclude') attempts.push(['exclude', audioC]);
+          if (pick.audio) attempts.push(['plain', audioC], ['plain', true]);
+          attempts.push([false, false]);
           let lastErr = null;
-          for (const audio of attempts) {
+          for (const [mode, audio] of attempts) {
             try {
-              await electron.selectScreenSource(pick.id, !!audio);
+              await electron.selectScreenSource(pick.id, mode);
               stream = await capture({ video: videoC, audio });
               break;
             } catch (e) {
               lastErr = e;
-              log('screen share attempt failed', audio === false ? 'video-only' : 'with sound', errText(e));
+              log('screen share attempt failed', mode || 'video-only', errText(e));
             }
           }
           if (!stream) throw lastErr || new Error('no stream');
@@ -1486,7 +2356,9 @@
       // If the engine confirms it's leaving out Parley's own playback, send the sound untouched.
       // Otherwise turn on the echo guard: the shared sound dips whenever your friend talks,
       // so they don't hear their own voice coming back.
-      const excluded = settings.restrictOwnAudio === true;
+      // 'loopbackWithoutChrome' = the OS is leaving all of Parley's playback out of the capture.
+      const excluded = settings.restrictOwnAudio === true || /^(loopbackWithoutChrome|restrictOwnAudioBrowserLoopback)/.test(settings.deviceId || '');
+      log('screen sound track', { deviceId: settings.deviceId, restrictOwnAudio: settings.restrictOwnAudio, channels: settings.channelCount, label: raw.label });
       const send = excluded ? raw : this.makeEchoGuardTrack(raw);
       send.contentHint = 'music';
       const stream = new MediaStream([send]);
@@ -1496,7 +2368,7 @@
       log('screen sound on', excluded ? '(own audio excluded by system)' : '(echo guard)');
       this.screenAudio = { raw, send, stream, sender, guard: !excluded };
       raw.addEventListener('ended', () => this.stopScreenAudio());
-      if (!excluded) toast('Sharing computer sound. Echo guard on: the sound dips while your friend talks.', 6000);
+      if (!excluded) toast('Sharing computer sound. Your system can’t leave Parley’s sound out, so the echo guard dips it while your friend talks.', 7000);
     },
 
     makeEchoGuardTrack(raw) {
@@ -1527,7 +2399,7 @@
         if (rms > 0.015) lastVoice = now;
         const talking = now - lastVoice < 450;
         // duck fast (30ms), recover slowly (250ms) so it doesn't pump
-        gain.gain.setTargetAtTime(talking ? 0.1 : 1, ctx.currentTime, talking ? 0.03 : 0.25);
+        gain.gain.setTargetAtTime(talking ? 0.03 : 1, ctx.currentTime, talking ? 0.03 : 0.25);
         this.screenAudio && (this.screenAudio.ducked = talking);
       }, 40);
       const out = dst.stream.getAudioTracks()[0];
@@ -1725,8 +2597,6 @@
       setIcon(mic, this.micOn ? 'mic' : 'micOff');
       mic.classList.toggle('off', !this.micOn);
       mic.title = this.micOn ? 'Mute microphone' : 'Unmute microphone';
-      setIcon($('#miniMicBtn'), this.micOn ? 'mic' : 'micOff');
-      $('#miniMicBtn').classList.toggle('off', !this.micOn);
       const cam = $('#camBtn');
       setIcon(cam, this.camOn ? 'video' : 'videoOff');
       cam.classList.toggle('off', !this.camOn);
@@ -1746,6 +2616,7 @@
         ? `You’re sharing your screen + sound${this.screenAudio.guard ? ' (echo guard on)' : ''}`
         : 'You’re sharing your screen';
       this.renderMediaBar();
+      if (Mini.isOpen()) Mini.sync();
     },
     setBusy(b) {
       wsSend({ type: 'status', status: b ? 'busy' : 'online' });
@@ -1765,7 +2636,10 @@
         clearInterval(t);
       }
       this.timers = {};
-      window.__parleyExitPiP();
+      exitBrowserPiP();
+      Mini.close();
+      Idle.reset();
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
       try {
         this.pc?.close();
       } catch {}
@@ -1801,8 +2675,8 @@
       el.stage.classList.add('hidden');
       $('#convo').classList.remove('in-call', 'chat-hidden');
       $('#incoming').classList.add('hidden');
-      document.body.classList.remove('compact');
       electron?.setCallState(false);
+      if (lastUpdate) renderUpdate(lastUpdate);
       this.setBusy(false);
       if (wasActive && peer) {
         Sound.end();
@@ -1813,33 +2687,274 @@
     },
   };
 
-  // ------------------------------------------------------------------ mini window / picture-in-picture
-  window.__parleyEnterPiP = async () => {
-    if (Call.state === 'idle') return false;
+
+  // ------------------------------------------------------------------ mini window (desktop app)
+  // A small always-on-top window with the other person's video (or the shared movie).
+  // It's opened from here with window.open, so it can show the call's video streams directly.
+  // Drag it anywhere, resize it from any corner, double-click it to go back.
+  const MINI_CSS = `
+    *{box-sizing:border-box}html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:"Segoe UI",-apple-system,system-ui,sans-serif;color:#fff;user-select:none}
+    .root{position:fixed;inset:0;cursor:grab}.root.dragging{cursor:grabbing}
+    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+    .root.contain #v{object-fit:contain}
+    .av{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(circle at 50% 40%,#1d2a38,#06090c)}
+    .av>div{width:min(38vw,38vh,96px);height:min(38vw,38vh,96px);border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:min(14vw,14vh,34px);
+      background:linear-gradient(135deg,hsl(var(--h) 62% 52%),hsl(calc(var(--h) + 35) 58% 38%));background-size:cover;background-position:center}
+    .av>div.img{color:transparent}
+    #self{left:auto;top:8px;right:8px;bottom:auto;width:26%;height:auto;aspect-ratio:16/9;border-radius:8px;transform:scaleX(-1);border:1px solid rgba(255,255,255,.15);box-shadow:0 4px 12px rgba(0,0,0,.5)}
+    .narrow #self{display:none}
+    .top{position:absolute;left:0;right:0;top:0;padding:8px 10px 18px;display:flex;gap:8px;align-items:center;font-size:12px;font-weight:600;
+      background:linear-gradient(rgba(0,0,0,.6),transparent);transition:opacity .25s}
+    .top .t{opacity:.8;font-variant-numeric:tabular-nums}
+    .muted-flag{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);border-radius:7px;padding:3px 6px;font-size:11px;display:none}
+    .muted-flag.on{display:block}
+    .ctl{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:6px;padding:5px;border-radius:24px;background:rgba(10,14,19,.72);
+      backdrop-filter:blur(10px);transition:opacity .25s,transform .25s}
+    .ctl button{width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center;cursor:pointer;padding:0}
+    .ctl button:hover{background:rgba(255,255,255,.26)}.ctl button.off{background:#eef2f6;color:#111}.ctl button.danger{background:#ef4d5a}
+    .ctl svg{width:16px;height:16px;display:block}
+    .idle .top,.idle .ctl{opacity:0;pointer-events:none}.idle .ctl{transform:translate(-50%,8px)}.idle{cursor:none}
+    .grip{position:absolute;width:18px;height:18px;z-index:5}
+    .grip.nw{left:0;top:0;cursor:nwse-resize}.grip.ne{right:0;top:0;cursor:nesw-resize}
+    .grip.sw{left:0;bottom:0;cursor:nesw-resize}.grip.se{right:0;bottom:0;cursor:nwse-resize}
+    .grip.se::after{content:'';position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:2px solid rgba(255,255,255,.55);border-bottom:2px solid rgba(255,255,255,.55);border-radius:0 0 3px 0;transition:opacity .25s}
+    .idle .grip.se::after{opacity:0}
+    .edge{position:absolute;z-index:4}.edge.n{left:18px;right:18px;top:0;height:5px;cursor:ns-resize}.edge.s{left:18px;right:18px;bottom:0;height:5px;cursor:ns-resize}
+    .edge.w{top:18px;bottom:18px;left:0;width:5px;cursor:ew-resize}.edge.e{top:18px;bottom:18px;right:0;width:5px;cursor:ew-resize}`;
+
+  const Mini = {
+    w: null,
+    els: null,
+    timer: null,
+    idleTimer: null,
+    shown: { v: null, self: null },
+    isOpen() {
+      return !!(this.w && !this.w.closed);
+    },
+    open() {
+      if (!electron || Call.state === 'idle') return false;
+      if (this.isOpen()) return true;
+      const w = window.open('about:blank', 'parley-mini', 'popup');
+      if (!w) {
+        log('mini window: window.open refused');
+        return false;
+      }
+      this.w = w;
+      const d = w.document;
+      d.title = `Parley — ${Call.peer || ''}`;
+      const st = d.createElement('style');
+      st.textContent = MINI_CSS;
+      d.head.append(st);
+      d.body.innerHTML = `<div class="root">
+          <div class="av"><div></div></div>
+          <video id="v" autoplay playsinline muted></video>
+          <video id="self" autoplay playsinline muted></video>
+          <div class="top"><span class="n"></span><span class="t"></span></div>
+          <div class="muted-flag">${icon('micOff').replace('<svg', '<svg style="width:12px;height:12px;display:inline;vertical-align:-2px"')} muted</div>
+          <div class="ctl">
+            <button data-a="expand" title="Back to Parley">${icon('expand')}</button>
+            <button data-a="mic" title="Mute">${icon('mic')}</button>
+            <button data-a="cam" title="Camera">${icon('video')}</button>
+            <button data-a="hangup" class="danger" title="Hang up">${icon('hangup')}</button>
+          </div>
+          <div class="edge n" data-r="n"></div><div class="edge s" data-r="s"></div><div class="edge w" data-r="w"></div><div class="edge e" data-r="e"></div>
+          <div class="grip nw" data-r="nw"></div><div class="grip ne" data-r="ne"></div><div class="grip sw" data-r="sw"></div><div class="grip se" data-r="se"></div>
+        </div>`;
+      const q = (s) => d.querySelector(s);
+      this.els = { root: q('.root'), v: q('#v'), self: q('#self'), av: q('.av>div'), name: q('.n'), time: q('.t'), muted: q('.muted-flag'), mic: q('[data-a=mic]'), cam: q('[data-a=cam]') };
+      this.shown = { v: null, self: null };
+      q('.ctl').addEventListener('click', (e) => {
+        const a = e.target.closest('button')?.dataset.a;
+        if (a === 'expand') this.expand();
+        else if (a === 'mic') Call.toggleMic();
+        else if (a === 'cam') Call.toggleCam();
+        else if (a === 'hangup') Call.hangup();
+      });
+      this.bindPointer(w, d);
+      this.sync();
+      this.timer = setInterval(() => this.sync(), 400);
+      w.addEventListener('beforeunload', () => this.cleanup());
+      log('mini window opened');
+      return true;
+    },
+    expand() {
+      electron?.miniExpand();
+    },
+    close() {
+      if (this.w && !this.w.closed) this.w.close();
+      this.cleanup();
+    },
+    cleanup() {
+      clearInterval(this.timer);
+      clearTimeout(this.idleTimer);
+      this.timer = null;
+      this.w = null;
+      this.els = null;
+    },
+    // Moving and resizing: pointer events here, bounds applied by the main process.
+    bindPointer(w, d) {
+      const root = this.els.root;
+      let drag = null;
+      const wake = () => {
+        root.classList.remove('idle');
+        clearTimeout(this.idleTimer);
+        this.idleTimer = setTimeout(() => this.els && root.classList.add('idle'), 2500);
+      };
+      wake();
+      root.addEventListener('pointermove', (e) => {
+        wake();
+        if (!drag || !drag.b) return;
+        const dx = e.screenX - drag.x;
+        const dy = e.screenY - drag.y;
+        const b = { ...drag.b };
+        const r = drag.r;
+        if (!r) {
+          b.x += dx;
+          b.y += dy;
+        } else {
+          if (r.includes('e')) b.width += dx;
+          if (r.includes('s')) b.height += dy;
+          if (r.includes('w')) {
+            b.width -= dx;
+            b.x += dx;
+          }
+          if (r.includes('n')) {
+            b.height -= dy;
+            b.y += dy;
+          }
+          // don't let the far edge slide when we hit the minimum size
+          if (b.width < 200) {
+            if (r.includes('w')) b.x -= 200 - b.width;
+            b.width = 200;
+          }
+          if (b.height < 120) {
+            if (r.includes('n')) b.y -= 120 - b.height;
+            b.height = 120;
+          }
+        }
+        if (!drag.raf) {
+          drag.raf = w.requestAnimationFrame(() => {
+            if (drag) drag.raf = 0;
+            electron.miniSetBounds(b);
+          });
+        }
+      });
+      root.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || e.target.closest('.ctl')) return;
+        const r = e.target.dataset.r || '';
+        drag = { x: e.screenX, y: e.screenY, r, b: null, raf: 0 };
+        electron.miniGetBounds().then((b) => drag && (drag.b = b));
+        root.setPointerCapture(e.pointerId);
+        if (!r) root.classList.add('dragging');
+      });
+      const end = (e) => {
+        drag = null;
+        root.classList.remove('dragging');
+        try {
+          root.releasePointerCapture(e.pointerId);
+        } catch {}
+      };
+      root.addEventListener('pointerup', end);
+      root.addEventListener('pointercancel', end);
+      root.addEventListener('mouseleave', () => !drag && root.classList.add('idle'));
+      root.addEventListener('dblclick', (e) => !e.target.closest('.ctl') && this.expand());
+      d.addEventListener('keydown', (e) => e.key === 'Escape' && this.expand());
+    },
+    // Keep the mini window showing whatever matters most right now.
+    sync() {
+      if (!this.isOpen()) return this.cleanup();
+      const E = this.els;
+      const stage = el.stage.classList;
+      let stream = null;
+      if (stage.contains('has-media')) stream = Call.mediaUrl ? Call.mediaStream : el.media.srcObject;
+      else if (stage.contains('remote-cam-on')) stream = el.remote.srcObject;
+      if (this.shown.v !== stream) {
+        this.shown.v = stream;
+        E.v.srcObject = stream || null;
+        if (stream) E.v.play().catch(() => {});
+      }
+      E.v.style.display = stream ? '' : 'none';
+      E.root.classList.toggle('contain', stage.contains('has-media') || stage.contains('remote-screen'));
+      const selfStream = Call.camOn && !Call.screenTrack ? el.local.srcObject : null;
+      if (this.shown.self !== selfStream) {
+        this.shown.self = selfStream;
+        E.self.srcObject = selfStream || null;
+        if (selfStream) E.self.play().catch(() => {});
+      }
+      E.self.style.display = selfStream ? '' : 'none';
+      E.root.classList.toggle('narrow', this.w.innerWidth < 260 || this.w.innerHeight < 150);
+      const peer = Call.peer || '';
+      E.name.textContent = peer;
+      E.time.textContent = el.timer.textContent || el.status.textContent || '';
+      E.av.style.setProperty('--h', hue(peer));
+      const img = Avatars.get(peer);
+      E.av.classList.toggle('img', !!img);
+      E.av.style.backgroundImage = img ? `url("${img}")` : '';
+      E.av.textContent = initials(peer);
+      E.muted.classList.toggle('on', Call.remoteMicOn === false);
+      E.mic.innerHTML = icon(Call.micOn ? 'mic' : 'micOff');
+      E.mic.classList.toggle('off', !Call.micOn);
+      E.cam.innerHTML = icon(Call.camOn ? 'video' : 'videoOff');
+      E.cam.classList.toggle('off', !Call.camOn);
+    },
+  };
+  window.__parleyMini = { open: () => Mini.open(), close: () => Mini.close() };
+  electron?.onMiniClosed?.(() => Mini.cleanup());
+
+  // Browser version: fall back to the browser's own picture-in-picture.
+  async function enterBrowserPiP() {
     if (!document.pictureInPictureEnabled) return false;
     const useMedia = el.stage.classList.contains('has-media') && el.media.readyState >= 2;
     const remoteHasVideo = el.stage.classList.contains('remote-cam-on') && el.remote.readyState >= 2;
     const v = useMedia ? el.media : remoteHasVideo ? el.remote : null;
-    if (!v) return false; // audio-only: fall back to the compact window, which shows the avatar
+    if (!v) return false;
     try {
-      if (document.pictureInPictureElement === v) return true;
-      await v.requestPictureInPicture();
+      if (document.pictureInPictureElement !== v) await v.requestPictureInPicture();
       return true;
     } catch (e) {
       console.warn('PiP refused', e);
       return false;
     }
-  };
-  window.__parleyExitPiP = () => {
+  }
+  function exitBrowserPiP() {
     if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
-    return true;
-  };
+  }
   async function goMini() {
-    if (electron) return electron.setCompact(true);
-    const ok = await window.__parleyEnterPiP();
+    if (electron) return electron.goMini();
+    const ok = await enterBrowserPiP();
     if (!ok) toast('Nothing to show in a mini window yet — the other person’s camera is off.');
   }
-  electron?.onCompactChanged((on) => document.body.classList.toggle('compact', on));
+
+  // ------------------------------------------------------------------ call UI: auto-hide + full screen
+  const Idle = {
+    timer: null,
+    wake() {
+      el.stage.classList.remove('idle');
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.sleep(), 3000);
+    },
+    sleep() {
+      if (!store.get('autoHideUi', true) || Call.state !== 'active') return;
+      if (el.stage.matches(':hover') && document.querySelector('.controls:hover, .media-bar:hover, .share-banner:hover')) return this.wake();
+      if (!$('#screenPicker').classList.contains('hidden')) return this.wake();
+      el.stage.classList.add('idle');
+    },
+    reset() {
+      clearTimeout(this.timer);
+      el.stage.classList.remove('idle');
+    },
+  };
+  function toggleFullscreen() {
+    if (document.fullscreenElement) return document.exitFullscreen().catch(() => {});
+    if (Call.state === 'idle') return;
+    el.stage.requestFullscreen().catch((e) => log('fullscreen refused', errText(e)));
+  }
+  document.addEventListener('fullscreenchange', () => {
+    const on = document.fullscreenElement === el.stage;
+    const b = $('#fullBtn');
+    setIcon(b, on ? 'fullscreenExit' : 'fullscreen');
+    b.title = on ? 'Exit full screen (Esc)' : 'Full screen (double-click the video)';
+  });
 
   // ------------------------------------------------------------------ screen picker (desktop app)
   function pickScreenSource() {
@@ -1852,13 +2967,18 @@
       modal.classList.remove('hidden');
       const soundBox = $('#shareSound');
       soundBox.checked = store.get('shareSound', true);
-      const loopOk = await electron.loopbackSupported().catch(() => false);
-      $('#shareSoundField').classList.toggle('hidden', !loopOk);
+      let loop = await electron.loopbackSupported().catch(() => ({ supported: false, exclude: false }));
+      if (typeof loop === 'boolean') loop = { supported: loop, exclude: false };
+      $('#shareSoundField').classList.toggle('hidden', !loop.supported);
+      $('#shareSoundHint').textContent = loop.exclude
+        ? '· your friend’s voice is left out automatically'
+        : '· your system can’t leave Parley’s sound out, so the echo guard will dip it while your friend talks (headphones help)';
       const done = (id) => {
         modal.classList.add('hidden');
         $('#pickerCancel').onclick = null;
         store.set('shareSound', soundBox.checked);
-        resolve(id ? { id, withAudio: loopOk && soundBox.checked } : null);
+        const audio = loop.supported && soundBox.checked ? (loop.exclude ? 'exclude' : 'plain') : false;
+        resolve(id ? { id, audio } : null);
       };
       $('#pickerCancel').onclick = () => done(null);
       let res;
@@ -1897,6 +3017,36 @@
     });
   }
 
+  // ------------------------------------------------------------------ updates (desktop app)
+  function renderUpdate(st) {
+    if (!st) return;
+    const bar = $('#updateBar');
+    const text = $('#updateText');
+    const btn = $('#updateBtn');
+    $('#versionText').textContent = `Parley ${st.current}` + (st.state === 'none' ? ' · up to date' : '');
+    if (st.state === 'downloading') {
+      bar.classList.remove('hidden');
+      text.textContent = `Downloading Parley ${st.version}… ${st.progress || 0}%`;
+      btn.classList.add('hidden');
+    } else if (st.state === 'ready') {
+      bar.classList.remove('hidden');
+      btn.classList.remove('hidden');
+      const busy = Call.state !== 'idle';
+      text.textContent = busy ? `Parley ${st.version} is ready. Restart after your call.` : `Parley ${st.version} is ready.`;
+      btn.disabled = busy;
+      btn.textContent = 'Restart';
+    } else if (st.state === 'error' && /Applications|replace itself/.test(st.error || '')) {
+      bar.classList.remove('hidden');
+      btn.classList.add('hidden');
+      text.textContent = st.error;
+    } else bar.classList.add('hidden');
+  }
+  let lastUpdate = null;
+  electron?.onUpdateStatus?.((st) => {
+    lastUpdate = st;
+    renderUpdate(st);
+  });
+
   // ------------------------------------------------------------------ settings
   let previewStream = null;
   async function openSettings() {
@@ -1905,8 +3055,24 @@
     $('#qualitySelect').value = store.get('quality', 'high');
     $('#ringVolume').value = Ring.volume();
     $('#hearSelf').checked = false;
+    $('#autoHideUi').checked = store.get('autoHideUi', true);
+    $('#readReceipts').checked = store.get('readReceipts', true);
+    paintAvatar($('#settingsAvatar'), S.me);
+    $('#avatarRemoveBtn').disabled = !store.get(myAvatarKey(), null)?.data;
+    renderThemes();
     fillRingtones();
     fillBrowsers();
+    if (electron?.getAppSettings) {
+      const a = await electron.getAppSettings().catch(() => null);
+      if (a) {
+        $('#keepRunning').checked = a.keepRunning;
+        $('#openAtLogin').checked = a.openAtLogin;
+        $('#openAtLoginLabel').textContent = a.platform === 'darwin' ? 'Open Parley when I log in to my Mac' : 'Start Parley when Windows starts';
+        $('#versionText').textContent = `Parley ${a.version}`;
+        $('#appSection').classList.toggle('hidden', a.platform === 'linux' && !navigator.webdriver);
+      }
+      electron.updateStatus?.().then(renderUpdate).catch(() => {});
+    }
     let devices = await navigator.mediaDevices.enumerateDevices();
     if (!devices.some((d) => d.label)) {
       try {
@@ -1935,6 +3101,33 @@
     if (canSink) fill($('#speakerSelect'), 'audiooutput', prefs.speaker);
     startPreview();
     startMicTest();
+  }
+  function renderThemes() {
+    const g = $('#themeGrid');
+    g.innerHTML = '';
+    const cur = themeId();
+    const entries = [['auto', { name: 'Match system', auto: true }], ...Object.entries(THEMES)];
+    for (const [id, t] of entries) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'theme' + (id === cur ? ' active' : '');
+      b.dataset.theme = id;
+      const a = t.auto ? THEMES.midnight : t;
+      const z = t.auto ? THEMES.light : t;
+      b.innerHTML = `<div class="theme-prev"><i></i><i></i></div><span class="theme-name"></span>`;
+      const prev = b.querySelector('.theme-prev');
+      prev.style.background = t.auto ? `linear-gradient(90deg, ${a.bg} 50%, ${z.bg} 50%)` : t.bg;
+      const [i1, i2] = prev.querySelectorAll('i');
+      i1.style.background = t.auto ? a.them : t.them;
+      i2.style.background = t.auto ? z.me : t.me;
+      b.querySelector('.theme-name').textContent = t.name;
+      b.onclick = () => {
+        store.set('theme', id);
+        applyTheme(id);
+        renderThemes();
+      };
+      g.append(b);
+    }
   }
   async function startPreview() {
     stopPreview();
@@ -2106,6 +3299,11 @@
       store.set('quality', e.target.value);
       Call.applyQuality();
     });
+    $('#autoHideUi').addEventListener('change', (e) => {
+      store.set('autoHideUi', e.target.checked);
+      if (!e.target.checked) Idle.reset();
+    });
+    $('#readReceipts').addEventListener('change', (e) => store.set('readReceipts', e.target.checked));
     $('#ringSelect').addEventListener('change', (e) => {
       const v = e.target.value;
       if (v === '__file') {
@@ -2141,9 +3339,42 @@
       electron?.setLinkBrowser(e.target.value);
     });
     $('#openLogBtn').addEventListener('click', () => electron?.openLog());
+    $('#keepRunning').addEventListener('change', (e) => electron?.setAppSetting('keepRunning', e.target.checked));
+    $('#openAtLogin').addEventListener('change', (e) => electron?.setAppSetting('openAtLogin', e.target.checked));
+    $('#checkUpdatesBtn').addEventListener('click', async () => {
+      const b = $('#checkUpdatesBtn');
+      b.disabled = true;
+      b.textContent = 'Checking…';
+      const st = await electron.checkForUpdates().catch((e) => ({ state: 'error', error: errText(e) }));
+      b.disabled = false;
+      b.textContent = 'Check for updates';
+      renderUpdate(st);
+      if (st.state === 'unsupported' || st.enabled === false) toast('Updates work in the installed app (not when running from source).');
+      else if (st.state === 'none') toast('You’re on the newest version.');
+      else if (st.state === 'downloading') toast(`Downloading Parley ${st.version}…`);
+      else if (st.state === 'ready') toast(`Parley ${st.version} is ready — press Restart.`);
+      else if (st.state === 'error') toast(`Couldn’t check for updates: ${st.error || 'unknown error'}`, 6000);
+    });
+    $('#avatarChangeBtn').addEventListener('click', () => {
+      $('#avatarFile').value = '';
+      $('#avatarFile').click();
+    });
+    $('#avatarRemoveBtn').addEventListener('click', async () => {
+      await setMyAvatar(null);
+      paintAvatar($('#settingsAvatar'), S.me);
+      $('#avatarRemoveBtn').disabled = true;
+    });
+    $('#avatarFile').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      await setMyAvatar(f);
+      paintAvatar($('#settingsAvatar'), S.me);
+      $('#avatarRemoveBtn').disabled = false;
+    });
     if (!electron) {
       $('#linkSection').classList.add('hidden');
       $('#troubleSection').classList.add('hidden');
+      $('#appSection').classList.add('hidden');
     } else {
       electron.setLinkBrowser?.(store.get('linkBrowser', ''));
     }
@@ -2162,13 +3393,23 @@
         e.preventDefault();
         setSidebarHidden(!$('#main').classList.contains('sidebar-hidden'));
       }
+      if (e.key === 'Escape') {
+        if (!$('#lightbox').classList.contains('hidden')) Lightbox.close();
+        else if (!$('#picker').classList.contains('hidden')) Picker.close();
+      }
     });
     $('#search').addEventListener('input', renderContacts);
     $('#logoutBtn').addEventListener('click', () => signOut(true));
     $('#settingsBtn').addEventListener('click', openSettings);
+    $('#myAvatarBtn').addEventListener('click', () => {
+      $('#avatarFile').value = '';
+      $('#avatarFile').click();
+    });
     $('#camSelect').addEventListener('change', startPreview);
     $('#settingsDone').addEventListener('click', saveSettings);
+    $('#updateBtn').addEventListener('click', () => electron?.installUpdate());
 
+    // ---- chat
     $('#composer').addEventListener('submit', (e) => {
       e.preventDefault();
       sendChat();
@@ -2186,7 +3427,71 @@
         wsSend({ type: 'typing', to: S.active });
       }
     });
+    $('#msgInput').addEventListener('paste', (e) => {
+      const files = [...(e.clipboardData?.files || [])];
+      if (files.length) {
+        e.preventDefault();
+        Files.sendMany(files);
+      }
+    });
+    const msgBox = $('#messages');
+    msgBox.addEventListener('scroll', () => {
+      S.stick = atBottom();
+      if (S.stick) {
+        $('#jumpBtn').classList.add('hidden');
+        if (S.active) sendRead(S.active);
+      }
+    });
+    // Anything that changes the list's height (photos loading, window resizing, the
+    // composer growing) keeps you at the newest message if you were there.
+    const ro = new ResizeObserver(() => S.stick && scrollToBottom());
+    ro.observe(msgBox);
+    ro.observe($('#msgList'));
+    $('#jumpBtn').addEventListener('click', scrollToBottom);
+    $('#emojiBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      Picker.toggle();
+    });
+    document.querySelectorAll('#picker .tab').forEach((t) => t.addEventListener('click', () => Picker.tab(t.dataset.tab)));
+    document.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('#picker, #emojiBtn')) Picker.close();
+    });
+    $('#attachBtn').addEventListener('click', () => {
+      $('#attachFile').value = '';
+      $('#attachFile').click();
+    });
+    $('#attachFile').addEventListener('change', (e) => Files.sendMany([...e.target.files]));
+    $('#stickerFile').addEventListener('change', (e) => e.target.files[0] && Picker.addCustom(e.target.files[0]));
+    const panel = $('#chatPanel');
+    let dragDepth = 0;
+    const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+    panel.addEventListener('dragenter', (e) => {
+      if (!hasFiles(e) || !S.active) return;
+      dragDepth++;
+      $('#dropZone').classList.remove('hidden');
+    });
+    panel.addEventListener('dragleave', () => {
+      if (--dragDepth <= 0) {
+        dragDepth = 0;
+        $('#dropZone').classList.add('hidden');
+      }
+    });
+    panel.addEventListener('dragover', (e) => hasFiles(e) && e.preventDefault());
+    panel.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth = 0;
+      $('#dropZone').classList.add('hidden');
+      Files.sendMany([...e.dataTransfer.files]);
+    });
+    // dropping a file anywhere else shouldn't navigate the app away
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+    $('#lightboxClose').addEventListener('click', () => Lightbox.close());
+    $('#lightboxSave').addEventListener('click', () => Lightbox.save());
+    $('#lightbox').addEventListener('click', (e) => e.target.id === 'lightbox' && Lightbox.close());
 
+    // ---- calls
     $('#audioCallBtn').addEventListener('click', () => S.active && Call.start(S.active, false));
     $('#videoCallBtn').addEventListener('click', () => S.active && Call.start(S.active, true));
     $('#acceptVideoBtn').addEventListener('click', () => Call.accept(true));
@@ -2194,7 +3499,6 @@
     $('#declineBtn').addEventListener('click', () => Call.decline());
 
     $('#micBtn').addEventListener('click', () => Call.toggleMic());
-    $('#miniMicBtn').addEventListener('click', () => Call.toggleMic());
     $('#camBtn').addEventListener('click', () => Call.toggleCam());
     $('#screenBtn').addEventListener('click', () => Call.toggleScreen());
     $('#watchBtn').addEventListener('click', () => {
@@ -2213,26 +3517,40 @@
     for (const ev of ['play', 'pause', 'ended', 'seeked']) el.media.addEventListener(ev, () => Call.sendMediaState());
     $('#shareStopBtn').addEventListener('click', () => Call.stopScreen());
     $('#mediaVolume').addEventListener('input', (e) => (el.media.volume = Number(e.target.value)));
-    $('#chatToggleBtn').addEventListener('click', () => $('#convo').classList.toggle('chat-hidden'));
-    $('#miniBtn').addEventListener('click', goMini);
-    $('#expandBtn').addEventListener('click', () => electron?.setCompact(false));
-    $('#hangupBtn').addEventListener('click', () => Call.hangup());
-    $('#miniHangupBtn').addEventListener('click', () => Call.hangup());
-
-    // Double-click the mini window to go back to full size
-    el.stage.addEventListener('dblclick', () => {
-      if (document.body.classList.contains('compact')) electron?.setCompact(false);
-    });
-
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && S.active && S.unread[keyOf(S.active)]) {
-        delete S.unread[keyOf(S.active)];
-        store.set('unread', S.unread);
-        renderContacts();
+    $('#chatToggleBtn').addEventListener('click', () => {
+      $('#convo').classList.toggle('chat-hidden');
+      if (!$('#convo').classList.contains('chat-hidden')) {
+        scrollToBottom();
+        sendRead(S.active);
       }
     });
+    $('#fullBtn').addEventListener('click', toggleFullscreen);
+    $('#miniBtn').addEventListener('click', goMini);
+    $('#hangupBtn').addEventListener('click', () => Call.hangup());
+
+    // Double-click the video for full screen (the whole call, so your friend's camera stays visible).
+    el.stage.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.controls, .media-bar, .share-banner')) return;
+      toggleFullscreen();
+    });
+    for (const ev of ['pointermove', 'pointerdown', 'wheel']) el.stage.addEventListener(ev, () => Idle.wake(), { passive: true });
+    document.addEventListener('keydown', () => Call.state !== 'idle' && Idle.wake());
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && S.active) {
+        if (S.unread[keyOf(S.active)]) {
+          delete S.unread[keyOf(S.active)];
+          store.set('unread', S.unread);
+          updateUnreadBadge();
+          renderContacts();
+        }
+        sendRead(S.active);
+      }
+    });
+    window.addEventListener('focus', () => S.active && sendRead(S.active));
     window.addEventListener('beforeunload', () => {
       if (Call.state !== 'idle') Call.hangup();
+      Mini.close();
     });
     // Refresh "last seen" labels
     setInterval(() => S.signedIn && renderContacts(), 60000);
@@ -2240,7 +3558,7 @@
   }
 
   // Exposed for automated tests only
-  window.__parleyDebug = { S, Call };
+  window.__parleyDebug = { S, Call, Mini, Files, Avatars, applyTheme, history, MsgView };
 
   bind();
   initLogin();

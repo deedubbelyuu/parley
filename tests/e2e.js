@@ -53,6 +53,9 @@ const rmsOf = (page, which) =>
   const a = A.page;
   const b = B.page;
   try {
+    // The call buttons fade out after 3 s without mouse movement (tested in tests/v12.js);
+    // keep them visible here so the robot can click them.
+    for (const p of [a, b]) await p.evaluate(() => localStorage.setItem('parley:autoHideUi', 'false'));
     console.log('Sign-in & chat');
     await H.login(a, 'Alice', true);
     await H.login(b, 'Bob', false);

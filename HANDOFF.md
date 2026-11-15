@@ -1,117 +1,115 @@
 # Parley: session handoff
 
-**Updated:** 2026-11-14 (after session 4: fixes from first family test)
+**Updated:** 2026-11-15 (after session 5: the 15-item feedback list from the family test)
 **Use:** personal and family only. Not a product.
-**Status:** v1.1.0 code is ready in the local repo; push and tag to build. Screen sharing had a confirmed root cause and is fixed. It's verified end to end in a Linux sandbox, but not yet on real Windows or Mac hardware.
+**Status:** v1.2.0 code is written into the local repo; Daylen pushes and tags it to build. Tested in a Linux sandbox: 36/36 checks in `tests/e2e.js` and 40/40 in `tests/v12.js`. Not yet tested on real Windows or Mac hardware. **v1.2.0 has to be installed by hand once**; after that, updates install themselves.
 
 ## Where things live
 | What | Where |
 |---|---|
-| Repo | github.com/deedubbelyuu/parley (temporarily **public** so family can download installers) |
+| Repo | github.com/deedubbelyuu/parley (temporarily **public**) |
 | Local copy | `C:\Users\DW\Documents\parley` (Windows PC, PowerShell) |
-| Server | Railway, auto-deploys from `main`. Env: `ACCESS_CODE` (required); `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` (optional) |
-| Installers | GitHub Release for each `v*` tag (`.dmg` + `.exe`), built by `.github/workflows/build-desktop.yml` |
+| Server | Railway, auto-deploys from `main`. Env: `ACCESS_CODE` (required). Optional: `TURN_*`, `FILES_DIR`, `MAX_FILE_MB`, `FILE_TTL_DAYS`, `GITHUB_REPO`, `GITHUB_TOKEN` |
+| Installers + update files | GitHub Release for each `v*` tag, built by `.github/workflows/build-desktop.yml`: `.dmg`, `-mac.zip`, `latest-mac.yml`, `Parley-Setup-x.exe`, `.blockmap`, `latest.yml` |
 | App log | `%APPDATA%\Parley\parley.log` / `~/Library/Application Support/Parley/parley.log`; Settings → Open log file |
+| Main-process settings | `settings.json` next to the log (keepRunning, openAtLogin, miniBounds) |
 
 ## How Claude works on this repo
-The cloud session can **clone the public repo read-only**. It can't push: the GitHub push attach was refused. With the desktop app linked, Claude writes changed files straight into `Documents\parley` through the folder bridge, and Daylen runs `git add/commit/push` and tags. If the repo goes private, Claude will need the repo added via claude.ai GitHub integration, or work only through the local folder.
+The cloud session can clone the public repo read-only (the GitHub API isn't reachable for it). It can't push. With the desktop app linked, Claude writes changed files straight into `Documents\parley` through the folder bridge, and Daylen runs `git add/commit/push` and tags.
 
-## Session 4 changes (v1.1.0)
-- **Screen share root cause:** `setPermissionRequestHandler` only allowed `media`, so Electron's separate **`display-capture`** permission was denied. `getDisplayMedia()` failed with NotAllowedError before the display-media handler ran, and the Windows build showed no error. The fix allows `display-capture`. Confirmed in the log as `permission denied: display-capture` when it's removed. **Don't add `setPermissionCheckHandler`**: it made `desktopCapturer.getSources()` return 0 sources.
-- **Why v1.0.0 tests missed it:** `--use-fake-ui-for-media-stream` auto-grants screen capture and bypasses our handlers. The Electron side of the tests now runs without it.
-- Screen share hardening: the handler grants the picked `{id, name}` directly instead of re-listing sources, because IDs differ between calls (seen: `screen:400:0` vs `screen:-3:0`). Other changes:
-  - Capture attempts go: sound with our constraints → sound with defaults → picture only.
-  - 15 s timeout.
-  - Visible error toast on every OS.
-  - Red **"You're sharing your screen"** banner with a Stop button.
-  - Retry when `getSources` returns empty.
-- **AI noise removal:** `@sapphi-red/web-noise-suppressor` 0.4.1 is vendored in `renderer/vendor/noise`.
-  - Modes: *Standard* = RNNoise (full band, default), *Strong* = GTCRN (removes more but runs at 16 kHz internally, so voice is less crisp), *Off* = Chromium NS only.
-  - The mic path is: raw track → 48 kHz AudioContext → worklet → `MediaStreamDestination` (mono) → sent. The processed track carries `_raw`, `_noise` and `_cleanup`.
-  - The native `noiseSuppression` filter is turned off when AI mode is on.
-  - The mode switches live mid-call (`Call.rebuildMic`).
-  - CSP needs `'wasm-unsafe-eval'`.
-  - Tested: pink noise is about 97% quieter.
-- **Audio quality:** `tuneOpus()` rewrites the *remote* SDP.
-  - The first audio m-section (mic) is mono at `maxaveragebitrate` 64k.
-  - Later sections (screen sound, movie) are stereo at 192k.
-  - FEC is on and DTX off.
-  - `setAudioParams` sets the sender `maxBitrate` and high priority.
-  - Presets: Data saver (24/64k), High (64/192k, default) and Maximum (128/320k).
-  - Tested: movie audio measured 193 kbps stereo.
-- **Watch together:** both sides get ⏯ and ±10 s (`media-ctl` and `media-state` signals). Other changes:
-  - Receiver `jitterBufferTarget` is 400 ms for the movie.
-  - Video is capped at 6 Mbps with `maintain-framerate`.
-  - A clear error if `captureStream` gives no tracks.
-  - The movie toolbar moved to the bottom, full width; it used to be crushed to about 240 px.
-- **Ringtones:** 7 generated tones plus a custom file (stored as a Blob in IndexedDB `parley/files/ringtone`), with volume and preview. Ringtones play on the chosen speaker.
-- **Open links in:** main detects browsers.
-  - Windows: from registry `StartMenuInternet` (HKCU and HKLM) plus known paths.
-  - Mac: `/Applications/*.app`.
-  - The chosen browser is launched directly, with fallback to `shell.openExternal`.
-- **Contact bar:** toggle button plus Ctrl/⌘+B, persisted.
-- **Log file** in main (rotates at 1 MB). Renderer `log()` → IPC.
+## Session 5 changes (v1.2.0)
+- **Screen-share echo (root fix):** the display-media handler now answers `audio: 'loopbackWithoutChrome'`. Electron 45 accepts it, though it isn't in the docs; checked in the sandbox, and the track reports `deviceId: 'loopbackWithoutChrome'`. The OS then captures all computer sound *except Parley's own process tree*:
+  - Windows: WASAPI process loopback, used on build ≥ 19045 (Win10 22H2 and Win11).
+  - macOS: CoreAudio tap, used on 14.2+.
+  - Main tells the renderer which mode is possible (`loopback-supported` → `{supported, exclude}`).
+  - Capture attempts go: exclude → plain loopback with our constraints → defaults → picture only.
+  - "Excluded" is detected from the track's `deviceId`/`restrictOwnAudio`. Older OSes still get the echo guard, which now ducks to 3% (was 10%). The picker says which you'll get, and the log records `screen sound track {deviceId…}`.
+  - Why v1.1 echoed: Chromium's `restrictOwnAudio` only works on Windows 11 (hard-coded check). Any other case fell back to the echo guard.
+- **Mini window rewritten:** it's now a real `window.open('about:blank','parley-mini')` child, which shares the call's MediaStreams directly. It replaces both OS picture-in-picture and the old "shrink the main window" compact mode.
+  - The window is frameless and resizable, uses `alwaysOnTop 'screen-saver'`, and has `skipTaskbar`. On Mac it is `type:'panel'` with `visibleOnFullScreen`. On Windows a 1.5 s `moveTop()` loop keeps it above browser and video fullscreen.
+  - Corner and edge grips plus dragging go through `mini-get-bounds`/`mini-set-bounds` IPC (min 200×120). Bounds are saved in settings.json.
+  - It opens on minimize **or hide** (close-to-tray) during a call and closes on restore/show or hang-up. Double-click or ⤢ expands.
+  - It shows the movie, then the remote camera, then the avatar, plus a self-view. Controls (expand, mute, camera, hang up) auto-hide after 2.5 s.
+  - The web version still uses video PiP.
+- **Full screen:** the button or a double-click fullscreens the whole stage, so the friend's camera tile stays visible. The movie's native fullscreen is disabled (`controlslist="nofullscreen"`).
+- **Auto-hide call UI:** `.stage.idle` after 3 s without pointer/keys. It fades the controls, timer and media bar and hides the cursor. Setting: `autoHideUi` (default on).
+- **Background running (tray):** closing the window hides it (first time: a notification explains). Tray menu has Open, Start with Windows / Open at login (`setLoginItemSettings`, `--hidden`), Keep running, and Quit.
+  - Incoming call → `incoming-call` IPC shows and focuses the window.
+  - Unread count: tray icon dot and tooltip, and the Mac dock badge.
+  - Settings → App mirrors the toggles.
+- **Auto-update:** the app asks **our server** (`/updates/*`), which proxies the latest GitHub Release (cached 5 min). With `GITHUB_TOKEN` this keeps working after the repo goes private. Both endpoints need the `x-parley-code` header.
+  - Windows: `electron-updater` with a generic feed (`setFeedURL` at runtime + `requestHeaders`), silent `quitAndInstall(true,true)`.
+  - Mac: custom code. It downloads the `-mac.zip` (from `/updates/latest.json`), extracts it with `ditto`, then a detached shell script waits for exit, swaps the bundle (keeping `.old` until it succeeds), runs `xattr -cr` and `open`s it. (Squirrel.Mac refuses ad-hoc signed apps.)
+  - Checks 20 s after sign-in, then every 3 h. Banner at the bottom of the contact list, disabled during calls. `package.json` has a placeholder generic `publish` URL just so `app-update.yml` gets generated.
+- **Chat:**
+  - **Auto-scroll:** nodes are reused per message id. A ResizeObserver keeps the view pinned to the bottom, and a "New messages" pill shows when scrolled up. This fixes the old bug where `innerHTML=''` jumped to the top.
+  - **Read receipts:** `read {to, ts}` is relayed, or queued per sender while offline. Ticks: 🕓 sending, ✓ queued, ✓✓ delivered, accent ✓✓ + "Seen" read. Settings toggle.
+  - **Message grouping**, last-message previews in the contact list, and "typing…" in the header.
+- **Photos & files:** `POST /files` (streamed to `FILES_DIR`, random 128-bit id, `MAX_FILE_MB` 100, swept after `FILE_TTL_DAYS` 30) and `GET /files/:id`, both gated by access code and CORS.
+  - The client shrinks photos to ≤2048 px (WebP if alpha, else JPEG). GIFs are kept as-is.
+  - XHR upload with progress, retry on failure. Everything sent or received is cached in IndexedDB (`f:<localId>`, `file:<id>`), and photos auto-download.
+  - Desktop saves files into Downloads with Open / Show in folder (`save-download` IPC). Lightbox for photos. Drag & drop, paste, 📎.
+  - Messages carry a text fallback, so v1.1 clients show "📷 Photo" / "📎 name".
+- **Emoji & stickers:** a picker with 9 categories plus recently used. A message that is only 1–3 emoji shows large.
+  - Stickers: 18 built-in **Pip** stickers, an original blob drawn in SVG (`renderer/stickers.js`), sent by id.
+  - Plus "your own" stickers: any image or GIF, ≤320 px, stored in IndexedDB, sent as a file with `sticker:true`.
+- **Profile pictures:** a 256 px JPEG data URL (≤110 KB) sent with `profile`. The server keeps it in memory and puts `avatarRev` in presence. Clients fetch it with `get-avatar` and cache it in localStorage. A client re-sends its own picture after a server restart.
+- **Color schemes:** `THEMES` in app.js set CSS variables (all colors are variables now): Midnight, Daylight, Graphite, Ocean, Forest, Sunset, Grape, Rose, Black, plus Match system. `nativeTheme` follows, so the Windows title bar matches.
+- **UI polish:** a full styles.css rewrite with a gradient avatar fallback, search icon, pill composer, nicer empty state and login, softer modals and animations. The contacts toggle moved to the right end of the header.
 
 ## File map
 ```
 package.json, package-lock.json   ← server deps (root, so Railway finds them)
-server/server.js                  ← presence, chat relay + offline queue, signaling, ICE config, serves web version
-app/package.json                  ← Electron 45, electron-builder 26, version 1.1.0
-app/main.js                       ← window, PiP/compact, permissions, screen picker + display-media handler, log file, link browser
+server/server.js                  ← presence, chat relay + offline queue, read receipts, avatars, /files, /updates proxy, signaling
+app/package.json                  ← Electron 45, electron-builder 26, electron-updater 6, version 1.2.0
+app/main.js                       ← window, tray, mini window, permissions, screen picker + loopback modes, updater, log, link browser
 app/preload.js                    ← contextBridge API (window.parley)
-app/renderer/index.html|styles.css|app.js  ← UI + call/chat logic (also served to browsers)
+app/assets/                       ← icon.png, tray(.png|-unread), trayTemplate(@2x), trayUnreadTemplate(@2x)
+app/renderer/index.html|styles.css|app.js|emoji.js|stickers.js
 app/renderer/vendor/noise/        ← rnnoise/gtcrn worklets + wasm, LICENSE
 app/build/icon.png, entitlements.mac.plist
 .github/workflows/build-desktop.yml
-tests/                            ← harness.js, e2e.js (36 checks), screens.js, repro-screen.js, README.md
+tests/                            ← harness.js, e2e.js (36), v12.js (40), screens.js, repro-screen.js, README.md
 ```
 
-## Key decisions (unchanged from v1.0)
+## Key decisions
 - WebRTC "perfect negotiation": the caller is impolite and the callee polite. The callee doesn't offer until the first offer arrives.
-- Every call always has one audio and one video sender. Placeholder tracks plus `replaceTrack` handle mic swaps, camera and screen.
-- Extra streams (screen sound, movie) are announced with `stream-role` before their tracks are added.
-- Mini window: PiP on minimize, with a fallback to a 380×240 always-on-top window.
-- Computer sound: `audio: 'loopback'` plus `restrictOwnAudio`. If it isn't confirmed, the echo guard ducks the shared sound while the friend talks.
-
-## Tested (Linux sandbox, Electron 45 ↔ Chrome, real display-media handler)
-36/36 in `tests/e2e.js`:
-- Chat and links in the chosen browser.
-- Sidebar toggle and persistence.
-- Custom and built-in ringtones; the ringtone stops on answer.
-- Noise removal: both modes, switching live, off, and mute.
-- Opus fmtp.
-- Screen share: banner, remote indicator, remote picture, log entries, Stop, and picker cancel.
-- Watch-together: picture, stereo bitrate, remote pause/skip/resume, and stop.
-- Hang-up and mic release.
-
-**Not testable in the sandbox:** loopback computer sound (Linux has none), Windows browser registry on a real machine, and Mac permissions.
+- Every call always has one audio and one video sender (placeholders + `replaceTrack`). Extra streams are announced with `stream-role`.
+- **Don't add `setPermissionCheckHandler`**: it made `desktopCapturer.getSources()` return 0 sources.
+- Tests run Electron **without** `--use-fake-ui-for-media-stream` (it bypasses our handlers). The old suite sets `autoHideUi=false` so the robot can click call buttons.
+- The mini window must be opened by the renderer, because only a `window.open` child can share MediaStreams. Main triggers it with `executeJavaScript('window.__parleyMini.open()', true)`.
+- Updates go through our server, not straight to GitHub, so the repo can go private.
 
 ## To verify on real hardware (next family test)
-1. Screen share on Windows: the banner appears, and the friend sees the screen **and hears computer sound**. Does the toast say "Echo guard on"? If anything fails, send `parley.log`.
-2. Same on Mac: first-time Screen & System Audio Recording permission, then restart Parley.
-3. Noise removal: type on a keyboard or run a fan during a call. Compare Standard and Strong with Hear yourself.
-4. Watch together with a real movie: smoothness, and pause/skip from the viewer's side.
-5. Ringtone: custom file plays on incoming calls.
-6. Open links in: the list shows the installed browsers, and links open in the chosen one.
+1. **Install v1.2.0 by hand** on each computer (last manual install).
+2. Screen share with sound on Windows: the picker should say "your friend's voice is left out automatically". The friend must **not** hear themselves. Log: `screen sound track {"deviceId":"loopbackWithoutChrome"…}`. If it says `loopback`, send `parley.log`.
+3. Same on Mac (14.2+): first-time permission prompt, then restart Parley.
+4. Mini window: minimize during a call, then fullscreen a YouTube video in a browser. The mini window should stay on top. Resize from corners and drag it around.
+5. Close the window, then get called: the window pops up. Tray menu: Start with Windows, then reboot and check it starts in the tray.
+6. Photos (incl. a phone photo with rotation), a big file (50+ MB), stickers, profile pictures, read receipts.
+7. **Auto-update:** after 1.2.0 is installed, bump to 1.2.1, tag and push. Within ~3 h (or Settings → Check for updates) the banner appears; Restart installs. Mac: check that it reopens and whether it re-asks for permissions.
 
 ## Backlog (priority order)
 1. **Security: per-person passwords** (names locked to a password; close the "same name kicks the old session" hole). Needs Postgres on Railway.
 2. **Security: limit sign-in attempts** for the access code.
 3. **Security: call safety code** (4 emoji from both DTLS fingerprints).
-4. Browser version: auto PiP when switching tabs.
-5. Security: end-to-end encrypted chat.
-6. Postgres-backed chat history and offline queue (currently in-memory, lost on redeploy).
-7. Optional "both have the file" synced playback mode for watch-together (full quality, no streaming).
-8. Nice-to-haves: images and files in chat, group calls (LiveKit), auto-update (electron-updater), paid code signing, bump Actions to checkout/setup-node v5.
+4. Postgres-backed chat history, offline queue and avatars (currently in-memory, lost on redeploy), plus a Railway Volume for `FILES_DIR`.
+5. Mac: a stable self-signed signing identity in CI so permissions survive updates (or a paid Apple cert).
+6. Message reactions, reply-to, edit/delete; seeking bar for the watch-together viewer.
+7. Browser version: auto PiP when switching tabs. Security: end-to-end encrypted chat.
+8. Optional "both have the file" synced playback mode for watch-together (full quality, no streaming).
+9. Nice-to-haves: group calls (LiveKit), paid code signing, bump Actions to checkout/setup-node v5.
 
 ## Deployment lessons
 - After `winget install`, refresh `$env:Path` or open a new PowerShell window (a new tab isn't enough).
 - **Always extract zips into `Documents`**, not `Documents\parley`, or everything nests as `parley/parley`.
 - `gh auth login --web --scopes workflow` is needed to push `.github/workflows` files.
 - `gh run watch <id>` / `gh run view <id>`; plain `gh run watch` only lists runs that have started.
+- Updates only work if each Release has `latest.yml` (Windows) and the `-mac.zip` (Mac). The workflow attaches them; don't delete them from Releases.
 
 ## Going private, later
 - Download links stop working for anyone else. Share installers via Drive or Dropbox.
+- **Set `GITHUB_TOKEN` on Railway first** (fine-grained, this repo, Contents: read-only), or auto-update stops.
 - Installed apps keep working, and Railway keeps deploying.
 - Private repos use GitHub's limited free Actions minutes, and macOS minutes count much higher.
 - `gh repo edit --visibility private --accept-visibility-change-consequences`

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="midnight">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' ws: wss: http: https:;" />
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream: data:; connect-src 'self' ws: wss: http: https:;" />
   <title>Parley</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="styles.css" />
@@ -35,7 +35,7 @@
   <div id="main" class="screen app hidden">
     <aside class="sidebar">
       <div class="me">
-        <div class="avatar" id="myAvatar"></div>
+        <button class="avatar-btn" id="myAvatarBtn" title="Change your profile picture"><div class="avatar" id="myAvatar"></div></button>
         <div class="me-text">
           <div class="me-name" id="myName"></div>
           <div class="me-status" id="myStatus">Online</div>
@@ -44,21 +44,26 @@
         <button class="icon-btn" id="logoutBtn" title="Sign out" data-icon="logout"></button>
       </div>
       <div id="connBanner" class="conn-banner hidden">Reconnecting to server…</div>
-      <input id="search" class="search" placeholder="Search contacts" />
+      <div class="search-wrap"><span data-icon="search"></span><input id="search" class="search" placeholder="Search" /></div>
       <ul id="contacts" class="contacts"></ul>
       <p class="hint">Friends show up here after they sign in to the same server with the access code.</p>
+      <div id="updateBar" class="update-bar hidden">
+        <span data-icon="download"></span>
+        <span id="updateText" class="grow"></span>
+        <button class="btn small primary" id="updateBtn">Restart</button>
+      </div>
     </aside>
 
     <section class="content">
       <div id="empty" class="empty">
         <button class="icon-btn sidebar-toggle floating" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
-        <span data-icon="chat" class="big-icon"></span>
-        <p>Pick someone on the left to chat or call.</p>
+        <div class="empty-art"><span data-icon="chat"></span></div>
+        <h2>Say hi to someone</h2>
+        <p>Pick a person on the left to chat or call.</p>
       </div>
 
       <div id="convo" class="convo hidden">
         <header class="convo-header">
-          <button class="icon-btn sidebar-toggle" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
           <div class="avatar" id="peerAvatar"></div>
           <div class="peer-text">
             <div class="peer-name" id="peerName"></div>
@@ -67,6 +72,8 @@
           <div class="spacer"></div>
           <button class="icon-btn round" id="audioCallBtn" title="Voice call" data-icon="phone"></button>
           <button class="icon-btn round accent" id="videoCallBtn" title="Video call" data-icon="video"></button>
+          <span class="header-sep"></span>
+          <button class="icon-btn sidebar-toggle" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
         </header>
 
         <div class="convo-body">
@@ -78,8 +85,8 @@
               <div class="remote-flags" id="remoteFlags"></div>
             </div>
             <div class="media-wrap">
-              <video id="mediaVideo" playsinline></video>
-              <div class="media-bar">
+              <video id="mediaVideo" playsinline controlslist="nofullscreen nodownload noremoteplayback noplaybackrate" disablepictureinpicture></video>
+              <div class="media-bar autohide">
                 <span data-icon="film"></span>
                 <span id="mediaTitle" class="media-title"></span>
                 <button class="icon-btn" id="mediaBackBtn" title="Back 10 seconds" data-icon="back10"></button>
@@ -97,34 +104,42 @@
               <button class="btn small danger" id="shareStopBtn">Stop</button>
             </div>
             <div id="stageStatus" class="stage-status"></div>
-            <div id="callTimer" class="call-timer"></div>
+            <div id="callTimer" class="call-timer autohide"></div>
 
-            <div class="controls">
+            <div class="controls autohide">
               <button class="ctl" id="micBtn" title="Mute microphone" data-icon="mic"></button>
               <button class="ctl" id="camBtn" title="Turn camera off" data-icon="video"></button>
               <button class="ctl" id="screenBtn" title="Share your screen" data-icon="screen"></button>
               <button class="ctl" id="watchBtn" title="Watch a video together" data-icon="film"></button>
               <button class="ctl" id="chatToggleBtn" title="Show / hide chat" data-icon="chat"></button>
+              <button class="ctl" id="fullBtn" title="Full screen (double-click the video)" data-icon="fullscreen"></button>
               <button class="ctl" id="miniBtn" title="Mini window" data-icon="mini"></button>
               <button class="ctl danger" id="hangupBtn" title="Hang up" data-icon="hangup"></button>
-            </div>
-
-            <!-- Only visible in the floating mini window -->
-            <div class="compact-controls">
-              <button class="ctl sm" id="expandBtn" title="Back to full window" data-icon="expand"></button>
-              <button class="ctl sm" id="miniMicBtn" title="Mute microphone" data-icon="mic"></button>
-              <button class="ctl sm danger" id="miniHangupBtn" title="Hang up" data-icon="hangup"></button>
             </div>
           </div>
 
           <!-- Chat -->
           <div class="chat" id="chatPanel">
-            <div id="messages" class="messages"></div>
+            <div id="messages" class="messages"><div id="msgList" class="msg-list"></div></div>
+            <button id="jumpBtn" class="jump hidden" title="Jump to newest"><span data-icon="down"></span><span id="jumpText">New messages</span></button>
             <div id="typing" class="typing"></div>
+            <div id="dropZone" class="drop-zone hidden"><span data-icon="paperclip"></span> Drop to send</div>
             <form id="composer" class="composer">
-              <textarea id="msgInput" rows="1" placeholder="Type a message"></textarea>
-              <button class="icon-btn round accent" title="Send" data-icon="send"></button>
+              <div class="composer-box">
+                <button type="button" class="icon-btn" id="emojiBtn" title="Emoji and stickers" data-icon="smile"></button>
+                <button type="button" class="icon-btn" id="attachBtn" title="Send a photo or file" data-icon="paperclip"></button>
+                <textarea id="msgInput" rows="1" placeholder="Type a message"></textarea>
+              </div>
+              <button class="icon-btn round accent send-btn" title="Send" data-icon="send"></button>
             </form>
+            <div id="picker" class="picker hidden">
+              <div class="picker-tabs">
+                <button type="button" class="tab active" data-tab="emoji">Emoji</button>
+                <button type="button" class="tab" data-tab="stickers">Stickers</button>
+              </div>
+              <div class="picker-body" id="pickerEmoji"></div>
+              <div class="picker-body hidden" id="pickerStickers"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -150,7 +165,8 @@
     <div class="modal-card picker-card">
       <h2>Share your screen</h2>
       <p id="pickerNote" class="note hidden"></p>
-      <label class="check sound-toggle" id="shareSoundField"><input type="checkbox" id="shareSound" checked /> Share computer sound</label>
+      <label class="check sound-toggle" id="shareSoundField"><input type="checkbox" id="shareSound" checked /> Share computer sound
+        <span id="shareSoundHint" class="muted small"></span></label>
       <div id="sourceGrid" class="source-grid"></div>
       <div class="row end">
         <button class="btn" id="pickerCancel">Cancel</button>
@@ -158,10 +174,35 @@
     </div>
   </div>
 
+  <!-- ============ PHOTO VIEWER ============ -->
+  <div id="lightbox" class="modal lightbox hidden">
+    <img id="lightboxImg" alt="" />
+    <div class="lightbox-bar">
+      <span id="lightboxName" class="grow"></span>
+      <button class="btn small" id="lightboxSave"><span data-icon="download"></span> Save</button>
+      <button class="btn small" id="lightboxClose">Close</button>
+    </div>
+  </div>
+
   <!-- ============ SETTINGS ============ -->
   <div id="settings" class="modal hidden">
     <div class="modal-card settings-card">
       <h2>Settings</h2>
+
+      <h3>Profile</h3>
+      <div class="profile-row">
+        <div class="avatar xl" id="settingsAvatar"></div>
+        <div class="col">
+          <div class="row tight">
+            <button class="btn small" id="avatarChangeBtn" type="button">Change picture</button>
+            <button class="btn small" id="avatarRemoveBtn" type="button">Remove</button>
+          </div>
+          <span class="muted small">Everyone on your server sees it.</span>
+        </div>
+      </div>
+
+      <h3>Appearance</h3>
+      <div id="themeGrid" class="theme-grid"></div>
 
       <h3>Audio &amp; video</h3>
       <video id="previewVideo" class="preview" autoplay playsinline muted></video>
@@ -186,6 +227,10 @@
           <option value="low">Data saver: for weak connections</option>
         </select>
       </label>
+      <label class="check"><input type="checkbox" id="autoHideUi" checked /> Hide call buttons when I’m not moving the mouse</label>
+
+      <h3>Chat</h3>
+      <label class="check"><input type="checkbox" id="readReceipts" checked /> Send read receipts (people see “Seen” when you’ve read their messages)</label>
 
       <h3>Ringtone</h3>
       <div class="row tight">
@@ -194,6 +239,16 @@
       </div>
       <label>Ringtone volume <input type="range" id="ringVolume" min="0" max="1" step="0.05" value="0.8" /></label>
       <input type="file" id="ringFile" accept="audio/*" hidden />
+
+      <div id="appSection">
+        <h3>App</h3>
+        <label class="check"><input type="checkbox" id="keepRunning" /> Keep Parley running in the background when I close the window</label>
+        <label class="check"><input type="checkbox" id="openAtLogin" /> <span id="openAtLoginLabel">Start Parley when my computer starts</span></label>
+        <div class="row tight">
+          <span class="muted small grow" id="versionText"></span>
+          <button class="btn small" id="checkUpdatesBtn" type="button">Check for updates</button>
+        </div>
+      </div>
 
       <div id="linkSection">
         <h3>Links</h3>
@@ -217,6 +272,11 @@
   <audio id="hearSelfAudio"></audio>
   <div id="toast" class="toast"></div>
   <input type="file" id="mediaFile" accept="video/*,audio/*" hidden />
+  <input type="file" id="avatarFile" accept="image/*" hidden />
+  <input type="file" id="attachFile" multiple hidden />
+  <input type="file" id="stickerFile" accept="image/png,image/gif,image/webp,image/jpeg" hidden />
+  <script src="emoji.js"></script>
+  <script src="stickers.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -11,14 +11,14 @@ const FAKE = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-str
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function startServer() {
+async function startServer(env = {}, port = PORT) {
   const srv = spawn(process.execPath, [path.join(ROOT, 'server', 'server.js')], {
-    env: { ...process.env, PORT: String(PORT), ACCESS_CODE: 'test' },
+    env: { ...process.env, PORT: String(port), ACCESS_CODE: 'test', ...env },
     stdio: 'ignore',
   });
   for (let i = 0; i < 50; i++) {
     try {
-      const r = await fetch(URL + '/health');
+      const r = await fetch(`http://localhost:${port}/health`);
       if (r.ok) return srv;
     } catch {}
     await sleep(100);

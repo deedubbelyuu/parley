@@ -163,7 +163,7 @@ const rmsOf = (page, which) =>
       return /maxaveragebitrate=64000/.test(line) && /useinbandfec=1/.test(line);
     });
     await check('switch to Strong (GTCRN) mid-call', async () => {
-      await a.click('#settingsBtn');
+      await a.click('#callSettingsBtn'); // v1.3: in a call the gear is in the call header
       await a.selectOption('#noiseSelect', 'strong');
       await a.waitForFunction(() => window.__parleyDebug.Call.audioTrack._noise === 'strong', null, { timeout: 8000 });
       await a.click('#settingsDone');
@@ -179,7 +179,7 @@ const rmsOf = (page, which) =>
       return out < raw * 0.25;
     });
     await check('turning noise removal off sends the plain mic', async () => {
-      await a.click('#settingsBtn');
+      await a.click('#callSettingsBtn'); // v1.3: in a call the gear is in the call header
       await a.selectOption('#noiseSelect', 'off');
       await a.waitForFunction(() => !window.__parleyDebug.Call.audioTrack._noise, null, { timeout: 5000 });
       await a.selectOption('#noiseSelect', 'standard');
@@ -206,8 +206,9 @@ const rmsOf = (page, which) =>
       await b.waitForSelector('#remoteFlags :text("Sharing screen")', { timeout: 6000 });
     });
     await check('Bob receives the screen picture (not the camera)', async () => {
-      await b.waitForFunction(() => document.querySelector('#remoteVideo').videoWidth >= 1000, null, { timeout: 10000 });
-      const w = await b.evaluate(() => `${remoteVideo.videoWidth}x${remoteVideo.videoHeight}`);
+      // v1.3: the screen arrives as its own video, and Alice's camera keeps going in its tile
+      await b.waitForFunction(() => document.querySelector('#stage').classList.contains('has-screen') && document.querySelector('#screenVideo').videoWidth >= 1000, null, { timeout: 10000 });
+      const w = await b.evaluate(() => `${screenVideo.videoWidth}x${screenVideo.videoHeight}`);
       console.log('     remote picture', w);
     });
     await check('log file records the share', async () => {
@@ -219,7 +220,7 @@ const rmsOf = (page, which) =>
     });
     await check('banner Stop button ends the share for both', async () => {
       await a.click('#shareStopBtn');
-      await b.waitForFunction(() => !document.querySelector('#stage').classList.contains('remote-screen'), null, { timeout: 5000 });
+      await b.waitForFunction(() => !document.querySelector('#stage').classList.contains('has-screen') && !document.querySelector('#screenVideo').srcObject, null, { timeout: 5000 });
       return a.evaluate(() => document.querySelector('#shareBanner').classList.contains('hidden'));
     });
     await check('cancelling the picker does nothing bad', async () => {

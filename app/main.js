@@ -19,6 +19,9 @@ const {
   nativeImage,
   nativeTheme,
   net,
+  dialog,
+  clipboard,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -261,6 +264,7 @@ function createWindow(forceShow = false) {
     backgroundColor: '#0e141b',
     icon: path.join(ASSETS, 'icon.png'),
     show: false,
+    autoHideMenuBar: true, // no File/Edit/View bar on Windows (Alt still shows it)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -322,6 +326,32 @@ function createWindow(forceShow = false) {
     }
   });
   win.webContents.on('render-process-gone', (_e, d) => log('renderer gone', d));
+  // Right-click on text: the usual Cut / Copy / Paste (+ spelling fixes). Messages, photos
+  // and contacts have their own menus in the UI, which take over before this runs.
+  win.webContents.on('context-menu', (_e, p) => {
+    const items = [];
+    if (p.misspelledWord) {
+      for (const w of (p.dictionarySuggestions || []).slice(0, 5)) items.push({ label: w, click: () => win.webContents.replaceMisspelling(w) });
+      if (items.length) items.push({ type: 'separator' });
+    }
+    if (p.isEditable) {
+      items.push(
+        { role: 'undo', enabled: p.editFlags.canUndo },
+        { role: 'redo', enabled: p.editFlags.canRedo },
+        { type: 'separator' },
+        { role: 'cut', enabled: p.editFlags.canCut },
+        { role: 'copy', enabled: p.editFlags.canCopy },
+        { role: 'paste', enabled: p.editFlags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll' }
+      );
+    } else if (p.selectionText && p.selectionText.trim()) {
+      items.push({ role: 'copy' });
+    } else if (p.linkURL && /^https?:/i.test(p.linkURL)) {
+      items.push({ label: 'Open link', click: () => openLink(p.linkURL) }, { label: 'Copy link', click: () => Promise.resolve(clipboard.writeText(p.linkURL)).catch(() => {}) });
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+  });
 
   win.on('closed', () => {
     win = null;
@@ -538,19 +568,61 @@ function uniquePath(dir, name) {
   for (let i = 1; exists(p); i++) p = path.join(dir, `${base} (${i})${ext}`);
   return p;
 }
+const savedPaths = new Set(); // files we wrote, so "Open" / "Show in folder" only touch those
+const okPath = (p) => typeof p === 'string' && (p.startsWith(app.getPath('downloads')) || savedPaths.has(p));
 ipcMain.handle('save-download', async (_e, name, data) => {
   const dir = app.getPath('downloads');
   fs.mkdirSync(dir, { recursive: true });
   const p = uniquePath(dir, name);
   await fs.promises.writeFile(p, Buffer.from(data));
+  savedPaths.add(p);
   log('file saved', p);
   return p;
 });
+// "Save as…": the normal save dialog, starting in Downloads (or wherever you saved last).
+let lastSaveDir = '';
+ipcMain.handle('save-as', async (_e, name, data) => {
+  const clean = String(name || 'file').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180) || 'file';
+  const r = await dialog.showSaveDialog(win, { defaultPath: path.join(lastSaveDir || app.getPath('downloads'), clean) });
+  if (r.canceled || !r.filePath) return null;
+  await fs.promises.writeFile(r.filePath, Buffer.from(data));
+  lastSaveDir = path.dirname(r.filePath);
+  savedPaths.add(r.filePath);
+  log('file saved as', r.filePath);
+  return r.filePath;
+});
+// data = PNG bytes. Electron 45 replaced clipboard.writeImage with the web-style async clipboard.write.
+ipcMain.handle('copy-image', async (_e, data) => {
+  try {
+    const buf = Buffer.from(data);
+    if (typeof clipboard.writeImage === 'function') {
+      const img = nativeImage.createFromBuffer(buf);
+      if (img.isEmpty()) return false;
+      clipboard.writeImage(img);
+      return true;
+    }
+    const { ClipboardItem } = require('electron');
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([buf], { type: 'image/png' }) })]);
+    return true;
+  } catch (e) {
+    log('copy image failed', String(e && e.message ? e.message : e));
+    return false;
+  }
+});
 ipcMain.on('open-path', (_e, p) => {
-  if (typeof p === 'string' && p.startsWith(app.getPath('downloads'))) shell.openPath(p);
+  if (okPath(p)) shell.openPath(p);
 });
 ipcMain.on('show-in-folder', (_e, p) => {
-  if (typeof p === 'string' && p.startsWith(app.getPath('downloads'))) shell.showItemInFolder(p);
+  if (okPath(p)) shell.showItemInFolder(p);
+});
+
+// "Away" status: how long since the mouse/keyboard was last used anywhere on the computer.
+ipcMain.handle('system-idle', () => {
+  try {
+    return { idle: powerMonitor.getSystemIdleTime(), locked: powerMonitor.getSystemIdleState(60) === 'locked' };
+  } catch {
+    return { idle: 0, locked: false };
+  }
 });
 
 // ---------------------------------------------------------------- screen sharing
@@ -660,12 +732,21 @@ ipcMain.on('open-privacy-settings', (_e, which) => {
 });
 
 // ---------------------------------------------------------------- notifications & attention
-ipcMain.on('notify', (_e, { title, body, silent }) => {
+const liveNotes = new Set(); // keep a reference so click handlers aren't garbage-collected
+ipcMain.on('notify', (_e, { title, body, silent, peer }) => {
   if (!Notification.isSupported() || !win) return;
   if (win.isVisible() && win.isFocused() && !win.isMinimized()) return;
   const n = new Notification({ title, body, silent: !!silent, icon: path.join(ASSETS, 'icon.png') });
-  n.on('click', showMain);
+  liveNotes.add(n);
+  const drop = () => liveNotes.delete(n);
+  n.on('click', () => {
+    drop();
+    showMain();
+    if (peer) win?.webContents.send('open-chat', String(peer));
+  });
+  n.on('close', drop);
   n.show();
+  setTimeout(drop, 10 * 60e3);
 });
 
 ipcMain.on('attention', () => {
@@ -886,6 +967,7 @@ app.whenReady().then(() => {
 
   installDisplayMediaHandler();
   if (IS_WIN) app.setAppUserModelId('com.daylen.parley');
+  for (const ev of ['lock-screen', 'unlock-screen', 'suspend', 'resume']) powerMonitor.on(ev, () => win?.webContents.send('power', ev));
   applyLoginItem();
   createWindow();
   createTray();

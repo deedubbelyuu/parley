@@ -36,12 +36,16 @@
     <aside class="sidebar">
       <div class="me">
         <button class="avatar-btn" id="myAvatarBtn" title="Change your profile picture"><div class="avatar" id="myAvatar"></div></button>
-        <div class="me-text">
-          <div class="me-name" id="myName"></div>
-          <div class="me-status" id="myStatus">Online</div>
-        </div>
+        <button class="me-text" id="statusBtn" title="Set your status">
+          <span class="me-name" id="myName"></span>
+          <span class="me-status" id="myStatus"><i class="sdot online"></i><span id="myStatusText">Online</span><span class="chev" data-icon="chevronDown"></span></span>
+        </button>
         <button class="icon-btn" id="settingsBtn" title="Settings" data-icon="settings"></button>
-        <button class="icon-btn" id="logoutBtn" title="Sign out" data-icon="logout"></button>
+      </div>
+      <div id="statusMenu" class="menu status-menu hidden" role="menu">
+        <button data-status="auto" role="menuitemradio"><i class="sdot online"></i><span><b>Available</b><small>Shows Away by itself when you step away</small></span></button>
+        <button data-status="away" role="menuitemradio"><i class="sdot away"></i><span><b>Appear away</b></span></button>
+        <button data-status="dnd" role="menuitemradio"><i class="sdot dnd"></i><span><b>Do not disturb</b><small>No message sounds or pop-ups; calls ring silently</small></span></button>
       </div>
       <div id="connBanner" class="conn-banner hidden">Reconnecting to server…</div>
       <div class="search-wrap"><span data-icon="search"></span><input id="search" class="search" placeholder="Search" /></div>
@@ -56,7 +60,7 @@
 
     <section class="content">
       <div id="empty" class="empty">
-        <button class="icon-btn sidebar-toggle floating" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
+        <button class="icon-btn sidebar-toggle floating has-badge" title="Show contacts (Ctrl+B)"><span class="ic" data-icon="panelLeftOpen"></span><span class="btn-badge hidden"></span></button>
         <div class="empty-art"><span data-icon="chat"></span></div>
         <h2>Say hi to someone</h2>
         <p>Pick a person on the left to chat or call.</p>
@@ -64,17 +68,28 @@
 
       <div id="convo" class="convo hidden">
         <header class="convo-header">
+          <button class="icon-btn sidebar-toggle has-badge" title="Hide contacts (Ctrl+B)"><span class="ic" data-icon="panelLeftClose"></span><span class="btn-badge hidden"></span></button>
           <div class="avatar" id="peerAvatar"></div>
           <div class="peer-text">
             <div class="peer-name" id="peerName"></div>
             <div class="peer-status" id="peerStatus"></div>
           </div>
           <div class="spacer"></div>
+          <button class="icon-btn" id="findBtn" title="Search this chat (Ctrl+F)" data-icon="search"></button>
           <button class="icon-btn round" id="audioCallBtn" title="Voice call" data-icon="phone"></button>
           <button class="icon-btn round accent" id="videoCallBtn" title="Video call" data-icon="video"></button>
-          <span class="header-sep"></span>
-          <button class="icon-btn sidebar-toggle" title="Show / hide contacts (Ctrl+B)" data-icon="sidebar"></button>
+          <span class="header-sep in-call-only"></span>
+          <button class="icon-btn in-call-only" id="callSettingsBtn" title="Settings — camera, microphone, speakers, noise removal" data-icon="settings"></button>
+          <button class="icon-btn has-badge in-call-only" id="chatPanelBtn" title="Hide chat"><span class="ic" data-icon="panelRightClose"></span><span class="btn-badge hidden"></span></button>
         </header>
+        <div id="findBar" class="find-bar hidden">
+          <span data-icon="search"></span>
+          <input id="findInput" placeholder="Search this chat" autocomplete="off" />
+          <span id="findCount" class="muted small"></span>
+          <button class="icon-btn" id="findPrev" title="Older match (Enter)" data-icon="chevronUp"></button>
+          <button class="icon-btn" id="findNext" title="Newer match (Shift+Enter)" data-icon="chevronDown"></button>
+          <button class="icon-btn" id="findClose" title="Close (Esc)" data-icon="x"></button>
+        </div>
 
         <div class="convo-body">
           <!-- Call stage -->
@@ -84,20 +99,31 @@
               <video id="remoteVideo" autoplay playsinline></video>
               <div class="remote-flags" id="remoteFlags"></div>
             </div>
+            <div class="screen-wrap">
+              <video id="screenVideo" autoplay playsinline muted></video>
+            </div>
             <div class="media-wrap">
               <video id="mediaVideo" playsinline controlslist="nofullscreen nodownload noremoteplayback noplaybackrate" disablepictureinpicture></video>
               <div class="media-bar autohide">
-                <span data-icon="film"></span>
-                <span id="mediaTitle" class="media-title"></span>
-                <button class="icon-btn" id="mediaBackBtn" title="Back 10 seconds" data-icon="back10"></button>
-                <button class="icon-btn" id="mediaPlayBtn" title="Pause" data-icon="pause"></button>
-                <button class="icon-btn" id="mediaFwdBtn" title="Forward 10 seconds" data-icon="fwd10"></button>
-                <label class="vol" title="Video volume"><span data-icon="volume"></span>
-                  <input type="range" id="mediaVolume" min="0" max="1" step="0.05" value="1" /></label>
-                <button class="btn small" id="mediaStopBtn">Stop sharing</button>
+                <div class="media-row">
+                  <span data-icon="film"></span>
+                  <span id="mediaTitle" class="media-title"></span>
+                  <label class="vol" title="Video volume (just for you)"><span data-icon="volume"></span>
+                    <input type="range" id="mediaVolume" min="0" max="1" step="0.05" value="1" /></label>
+                  <button class="btn small" id="mediaStopBtn">Stop sharing</button>
+                </div>
+                <div class="media-row">
+                  <button class="icon-btn" id="mediaBackBtn" title="Back 10 seconds" data-icon="back10"></button>
+                  <button class="icon-btn" id="mediaPlayBtn" title="Pause" data-icon="pause"></button>
+                  <button class="icon-btn" id="mediaFwdBtn" title="Forward 10 seconds" data-icon="fwd10"></button>
+                  <span class="media-time" id="mediaPos">0:00</span>
+                  <input type="range" id="mediaSeek" class="seek" min="0" max="1000" step="1" value="0" title="Jump to a spot (works for both of you)" />
+                  <span class="media-time" id="mediaDur">0:00</span>
+                </div>
               </div>
             </div>
-            <video id="localVideo" class="local" autoplay playsinline muted></video>
+            <video id="localVideo" class="local" autoplay playsinline muted title="You — drag to move"></video>
+            <div id="mutedHint" class="muted-hint hidden"><span data-icon="micOff"></span> You’re muted <button class="btn small" id="mutedHintBtn">Unmute</button></div>
             <div id="shareBanner" class="share-banner hidden">
               <span class="rec-dot"></span>
               <span id="shareBannerText">You’re sharing your screen</span>
@@ -109,28 +135,37 @@
             <div class="controls autohide">
               <button class="ctl" id="micBtn" title="Mute microphone" data-icon="mic"></button>
               <button class="ctl" id="camBtn" title="Turn camera off" data-icon="video"></button>
+              <span class="ctl-sep"></span>
               <button class="ctl" id="screenBtn" title="Share your screen" data-icon="screen"></button>
-              <button class="ctl" id="watchBtn" title="Watch a video together" data-icon="film"></button>
-              <button class="ctl" id="chatToggleBtn" title="Show / hide chat" data-icon="chat"></button>
+              <button class="ctl" id="watchBtn" title="Watch a video together (or drop a video file here)" data-icon="film"></button>
+              <span class="ctl-sep"></span>
               <button class="ctl" id="fullBtn" title="Full screen (double-click the video)" data-icon="fullscreen"></button>
               <button class="ctl" id="miniBtn" title="Mini window" data-icon="mini"></button>
-              <button class="ctl danger" id="hangupBtn" title="Hang up" data-icon="hangup"></button>
+              <button class="ctl danger hangup" id="hangupBtn" title="Hang up" data-icon="hangup"></button>
             </div>
+            <div id="stageDrop" class="stage-drop hidden"><span data-icon="film"></span> Drop a video to watch it together</div>
           </div>
 
           <!-- Chat -->
           <div class="chat" id="chatPanel">
+            <div class="chat-resizer" id="chatResizer" title="Drag to resize"></div>
             <div id="messages" class="messages"><div id="msgList" class="msg-list"></div></div>
             <button id="jumpBtn" class="jump hidden" title="Jump to newest"><span data-icon="down"></span><span id="jumpText">New messages</span></button>
             <div id="typing" class="typing"></div>
-            <div id="dropZone" class="drop-zone hidden"><span data-icon="paperclip"></span> Drop to send</div>
+            <div id="dropZone" class="drop-zone hidden"><span data-icon="paperclip"></span> Drop to add to your message</div>
+            <div id="composeBanner" class="compose-banner hidden">
+              <span class="cb-icon" id="composeIcon"></span>
+              <div class="cb-text"><div class="cb-title" id="composeTitle"></div><div class="cb-sub" id="composeSub"></div></div>
+              <button type="button" class="icon-btn" id="composeCancel" title="Cancel (Esc)" data-icon="x"></button>
+            </div>
+            <div id="tray" class="tray hidden"></div>
             <form id="composer" class="composer">
               <div class="composer-box">
                 <button type="button" class="icon-btn" id="emojiBtn" title="Emoji and stickers" data-icon="smile"></button>
-                <button type="button" class="icon-btn" id="attachBtn" title="Send a photo or file" data-icon="paperclip"></button>
-                <textarea id="msgInput" rows="1" placeholder="Type a message"></textarea>
+                <button type="button" class="icon-btn" id="attachBtn" title="Add photos or files" data-icon="paperclip"></button>
+                <textarea id="msgInput" rows="1" placeholder="Type a message" spellcheck="true"></textarea>
               </div>
-              <button class="icon-btn round accent send-btn" title="Send" data-icon="send"></button>
+              <button class="icon-btn round accent send-btn" id="sendBtn" title="Send (Enter)" data-icon="send"></button>
             </form>
             <div id="picker" class="picker hidden">
               <div class="picker-tabs">
@@ -176,13 +211,20 @@
 
   <!-- ============ PHOTO VIEWER ============ -->
   <div id="lightbox" class="modal lightbox hidden">
+    <button class="lb-nav prev" id="lightboxPrev" title="Previous photo (←)" data-icon="chevronLeft"></button>
     <img id="lightboxImg" alt="" />
+    <button class="lb-nav next" id="lightboxNext" title="Next photo (→)" data-icon="chevronRight"></button>
     <div class="lightbox-bar">
       <span id="lightboxName" class="grow"></span>
-      <button class="btn small" id="lightboxSave"><span data-icon="download"></span> Save</button>
+      <button class="btn small" id="lightboxCopy" title="Copy image"><span data-icon="copy"></span> Copy</button>
+      <button class="btn small" id="lightboxSaveAs" title="Choose where to save it"><span data-icon="folder"></span> Save as…</button>
+      <button class="btn small primary" id="lightboxSave" title="Save to Downloads"><span data-icon="download"></span> Save</button>
       <button class="btn small" id="lightboxClose">Close</button>
     </div>
   </div>
+
+  <!-- ============ MENUS ============ -->
+  <div id="ctxMenu" class="menu ctx-menu hidden" role="menu"></div>
 
   <!-- ============ SETTINGS ============ -->
   <div id="settings" class="modal hidden">
@@ -231,6 +273,8 @@
 
       <h3>Chat</h3>
       <label class="check"><input type="checkbox" id="readReceipts" checked /> Send read receipts (people see “Seen” when you’ve read their messages)</label>
+      <label class="check"><input type="checkbox" id="linkPreviews" checked /> Show previews for links (pictures and titles, like YouTube thumbnails)</label>
+      <label class="check"><input type="checkbox" id="msgSound" checked /> Play a sound for new messages</label>
 
       <h3>Ringtone</h3>
       <div class="row tight">
@@ -261,6 +305,15 @@
           <span class="muted small">Send this to Daylen if something breaks.</span></div>
       </div>
 
+      <h3>Keyboard shortcuts</h3>
+      <div class="shortcuts" id="shortcutList"></div>
+
+      <h3>Account</h3>
+      <div class="row tight account-row">
+        <span class="muted small grow" id="accountText"></span>
+        <button class="btn small danger-outline" id="logoutBtn" type="button"><span data-icon="logout"></span> Sign out</button>
+      </div>
+
       <div class="row end">
         <button class="btn primary" id="settingsDone">Done</button>
       </div>
@@ -271,7 +324,7 @@
   <audio id="ringAudio" loop></audio>
   <audio id="hearSelfAudio"></audio>
   <div id="toast" class="toast"></div>
-  <input type="file" id="mediaFile" accept="video/*,audio/*" hidden />
+  <input type="file" id="mediaFile" accept="video/*,audio/*,.mkv" hidden />
   <input type="file" id="avatarFile" accept="image/*" hidden />
   <input type="file" id="attachFile" multiple hidden />
   <input type="file" id="stickerFile" accept="image/png,image/gif,image/webp,image/jpeg" hidden />

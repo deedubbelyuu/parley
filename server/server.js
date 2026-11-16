@@ -1,5 +1,6 @@
-// Parley server — presence, text chat relay, read receipts, profile pictures,
-// file/photo hand-off, app updates, and WebRTC call signaling.
+// Parley server — presence, text chat relay (replies, reactions, edits, deletes),
+// read receipts, profile pictures, file/photo hand-off, link previews, app updates,
+// and WebRTC call signaling.
 // Video/audio/screen never pass through here; they go peer-to-peer.
 // Deploy to Railway: it reads PORT automatically.
 //
@@ -14,6 +15,7 @@
 //   FILE_TTL_DAYS    How long sent files stay downloadable (default 30)
 //   GITHUB_REPO      Where app updates come from (default deedubbelyuu/parley)
 //   GITHUB_TOKEN     Needed for updates once the repo is private (fine-grained token, Contents: read)
+//   LINK_PREVIEWS    Set to 0 to turn off link previews (the server fetching pages people paste)
 //   PORT             Set by Railway
 
 const path = require('path');
@@ -21,6 +23,8 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 const crypto = require('crypto');
+const dns = require('dns').promises;
+const net = require('net');
 const { Readable } = require('stream');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -62,7 +66,7 @@ const app = express();
 app.disable('x-powered-by');
 
 // The desktop app loads its UI from file://, so it calls us cross-origin.
-app.use(['/files', '/updates'], (req, res, next) => {
+app.use(['/files', '/updates', '/preview'], (req, res, next) => {
   res.set({
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -180,6 +184,178 @@ function sweepFiles() {
 }
 setInterval(sweepFiles, 3600e3).unref();
 
+// ---- link previews
+// The app asks us for a preview card (title, picture, site) for a link someone sent. We fetch
+// the page here so the app never talks to random websites itself, and send the picture back
+// inline as a data URL. Private/internal addresses are refused so this can't be used to poke
+// at Railway's network.
+const LINK_PREVIEWS = process.env.LINK_PREVIEWS !== '0';
+const PREVIEW_ALLOW_PRIVATE = process.env.PREVIEW_ALLOW_PRIVATE === '1'; // tests only
+const PREVIEW_UA = 'Mozilla/5.0 (compatible; ParleyBot/1.3; +link previews for a private chat app)';
+const previewCache = new Map(); // url -> { at, data }
+
+function privateIp(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  const s = String(ip).toLowerCase();
+  if (s.startsWith('::ffff:')) return privateIp(s.slice(7));
+  return s === '::1' || s === '::' || s.startsWith('fc') || s.startsWith('fd') || s.startsWith('fe8') || s.startsWith('fe9') || s.startsWith('fea') || s.startsWith('feb');
+}
+async function safeUrl(raw) {
+  let u;
+  try {
+    u = new URL(String(raw));
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(u.protocol) || u.username || u.password) return null;
+  if (PREVIEW_ALLOW_PRIVATE) return u;
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (/^localhost$|\.local$|\.internal$/i.test(host)) return null;
+  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true }).catch(() => []);
+  if (!addrs.length || addrs.some((a) => privateIp(a.address))) return null;
+  return u;
+}
+// GET with a size cap, a time limit and redirects checked one hop at a time.
+async function fetchCapped(raw, { accept, max, timeout = 6000 }) {
+  let cur = raw;
+  for (let hop = 0; hop < 5; hop++) {
+    const u = await safeUrl(cur);
+    if (!u) throw new Error('blocked address');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeout);
+    try {
+      const r = await fetch(u, { redirect: 'manual', signal: ctl.signal, headers: { 'User-Agent': PREVIEW_UA, Accept: accept, 'Accept-Language': 'en-US,en;q=0.8' } });
+      if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+        cur = new URL(r.headers.get('location'), u).href;
+        r.body?.cancel().catch(() => {});
+        continue;
+      }
+      if (!r.ok || !r.body) throw new Error(`answered ${r.status}`);
+      const parts = [];
+      let size = 0;
+      const reader = r.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > max) {
+          reader.cancel().catch(() => {});
+          if (/^image\//.test(accept)) throw new Error('too big');
+          break; // for pages, the head is all we need
+        }
+        parts.push(value);
+      }
+      return { url: u.href, type: String(r.headers.get('content-type') || ''), body: Buffer.concat(parts) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error('too many redirects');
+}
+function decodeEntities(s) {
+  return String(s || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function parseMeta(html) {
+  const meta = {};
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    const attr = (n) => (tag.match(new RegExp(`\\b${n}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')) || [])
+      .slice(2).find((x) => x != null);
+    const key = (attr('property') || attr('name') || attr('itemprop') || '').toLowerCase();
+    const val = attr('content');
+    if (key && val != null && !(key in meta)) meta[key] = decodeEntities(val);
+  }
+  const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1];
+  return { meta, title: title ? decodeEntities(title) : '' };
+}
+function youTubeId(u) {
+  const h = u.hostname.replace(/^(www|m|music)\./, '');
+  let id = '';
+  if (h === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+  else if (h === 'youtube.com' || h === 'youtube-nocookie.com') {
+    id = u.searchParams.get('v') || (u.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/) || [])[1] || '';
+  }
+  return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? id : '';
+}
+async function imageData(url) {
+  try {
+    const r = await fetchCapped(url, { accept: 'image/*', max: 1_500_000, timeout: 6000 });
+    const type = r.type.split(';')[0].trim().toLowerCase();
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(type) || r.body.length < 100) return '';
+    return `data:${type};base64,${r.body.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+async function buildPreview(raw) {
+  const u = await safeUrl(raw);
+  if (!u) return null;
+  const yt = youTubeId(u);
+  if (yt) {
+    let title = '';
+    let author = '';
+    try {
+      const r = await fetchCapped(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent('https://www.youtube.com/watch?v=' + yt)}`, { accept: 'application/json', max: 100_000 });
+      const j = JSON.parse(r.body.toString('utf8'));
+      title = String(j.title || '');
+      author = String(j.author_name || '');
+    } catch {}
+    const image = (await imageData(`https://i.ytimg.com/vi/${yt}/hqdefault.jpg`)) || (await imageData(`https://i.ytimg.com/vi/${yt}/mqdefault.jpg`));
+    if (!title && !image) return null;
+    return { url: u.href, kind: 'video', site: 'YouTube', title: title || 'YouTube video', description: author, image };
+  }
+  const page = await fetchCapped(u.href, { accept: 'text/html,application/xhtml+xml', max: 600_000 });
+  const type = page.type.toLowerCase();
+  if (/^image\/(jpeg|png|webp|gif)/.test(type)) {
+    return { url: page.url, kind: 'image', site: u.hostname.replace(/^www\./, ''), title: decodeURIComponent(u.pathname.split('/').pop() || u.hostname), description: '', image: await imageData(page.url) };
+  }
+  if (!/html|xml/.test(type)) return null;
+  const { meta, title } = parseMeta(page.body.toString('utf8'));
+  const pick = (...k) => k.map((x) => meta[x]).find((v) => v && v.trim()) || '';
+  const t = pick('og:title', 'twitter:title') || title;
+  if (!t) return null;
+  let img = pick('og:image:secure_url', 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src', 'image');
+  try {
+    img = img ? new URL(img, page.url).href : '';
+  } catch {
+    img = '';
+  }
+  const ogType = pick('og:type');
+  return {
+    url: page.url,
+    kind: /video/.test(ogType) ? 'video' : 'page',
+    site: pick('og:site_name', 'application-name') || new URL(page.url).hostname.replace(/^www\./, ''),
+    title: t.slice(0, 200),
+    description: pick('og:description', 'twitter:description', 'description').slice(0, 300),
+    image: img ? await imageData(img) : '',
+  };
+}
+app.get('/preview', async (req, res) => {
+  if (!LINK_PREVIEWS) return res.status(404).json({ error: 'off' });
+  const url = String(req.query.url || '').slice(0, 2000);
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' });
+  const hit = previewCache.get(url);
+  if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.data ? res.json(hit.data) : res.status(404).json({ error: 'no preview' });
+  let data = null;
+  try {
+    data = await buildPreview(url);
+  } catch (e) {
+    data = null;
+  }
+  previewCache.set(url, { at: Date.now(), data });
+  if (previewCache.size > 500) previewCache.delete(previewCache.keys().next().value);
+  res.set('Cache-Control', 'private, max-age=3600');
+  return data ? res.json(data) : res.status(404).json({ error: 'no preview' });
+});
+
 // ---- app updates
 // The desktop app asks *this server* for updates, and we fetch them from the latest
 // GitHub Release. That way updates keep working after the repo goes private
@@ -255,7 +431,7 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 * 1024 })
 const online = new Map();
 /** key -> { name, lastSeen, avatar, avatarRev } — everyone seen since the server started */
 const known = new Map();
-/** key -> [messages] waiting for an offline user */
+/** key -> [messages] waiting for an offline user (chats, reactions, edits, deletes) */
 const queues = new Map();
 /** key -> Map(fromKey -> ts): read receipts waiting for an offline sender */
 const readQueues = new Map();
@@ -290,6 +466,29 @@ function cleanName(raw) {
     .trim()
     .slice(0, 32);
   return name.length >= 2 ? name : null;
+}
+
+const STATUSES = new Set(['online', 'away', 'busy', 'dnd']);
+
+// Hand a message to someone now, or keep it until they sign in.
+function deliver(toKey, out) {
+  const target = online.get(toKey);
+  if (target) {
+    send(target.ws, out);
+    return true;
+  }
+  const q = queues.get(toKey) || [];
+  q.push(out);
+  if (q.length > MAX_QUEUE) q.shift();
+  queues.set(toKey, q);
+  return false;
+}
+
+function cleanReply(r) {
+  if (!r || typeof r !== 'object') return undefined;
+  const id = String(r.id || '').slice(0, 64);
+  if (!id) return undefined;
+  return { id, from: String(r.from || '').slice(0, 32), text: String(r.text || '').slice(0, 240) };
 }
 
 // Only pass along file info we actually have, with tidy fields.
@@ -357,7 +556,7 @@ wss.on('connection', (ws) => {
         for (const m of q) {
           send(ws, m);
           // tell the original sender it finally arrived
-          const sender = online.get(keyOf(m.from));
+          const sender = m.type === 'chat' && online.get(keyOf(m.from));
           if (sender) send(sender.ws, { type: 'chat-ack', id: m.id, ts: m.ts, delivered: true, to: name });
         }
         queues.delete(key);
@@ -383,6 +582,7 @@ wss.on('connection', (ws) => {
         const file = cleanFileRef(msg.file);
         const sticker = typeof msg.sticker === 'string' && /^[a-z0-9-]{1,40}$/.test(msg.sticker) ? msg.sticker : undefined;
         if (!text.trim() && !file && !sticker) return;
+        const reply = cleanReply(msg.reply);
         const out = {
           type: 'chat',
           id: String(msg.id || Date.now()).slice(0, 64),
@@ -391,17 +591,32 @@ wss.on('connection', (ws) => {
           text,
           ...(file ? { file } : {}),
           ...(sticker ? { sticker } : {}),
+          ...(reply ? { reply } : {}),
           ts: Date.now(),
         };
-        const target = online.get(toKey);
-        if (target) send(target.ws, out);
-        else {
-          const q = queues.get(toKey) || [];
-          q.push(out);
-          if (q.length > MAX_QUEUE) q.shift();
-          queues.set(toKey, q);
+        const delivered = deliver(toKey, out);
+        send(ws, { type: 'chat-ack', id: out.id, ts: out.ts, delivered, to: out.to });
+        break;
+      }
+      // Reactions, edits and deletes of an earlier message (by its id).
+      case 'react':
+      case 'edit':
+      case 'delete': {
+        const toKey = keyOf(msg.to || '');
+        const id = String(msg.id || '').slice(0, 64);
+        if (!toKey || !known.has(toKey) || !id) return;
+        const out = { type: msg.type, from: self.name, id, ts: Date.now() };
+        if (msg.type === 'react') {
+          const emoji = String(msg.emoji || '');
+          if (!emoji || emoji.length > 16) return;
+          out.emoji = emoji;
+          out.on = !!msg.on;
+        } else if (msg.type === 'edit') {
+          const text = String(msg.text || '').slice(0, MAX_TEXT);
+          if (!text.trim()) return;
+          out.text = text;
         }
-        send(ws, { type: 'chat-ack', id: out.id, ts: out.ts, delivered: !!target, to: out.to });
+        deliver(toKey, out);
         break;
       }
       case 'read': {
@@ -452,7 +667,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'status': {
-        if (msg.status === 'busy' || msg.status === 'online') {
+        if (STATUSES.has(msg.status)) {
           self.status = msg.status;
           broadcastPresence();
         }

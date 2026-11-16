@@ -4,12 +4,17 @@ A private, Skype-style app for you and your people. It has:
 
 - **Video and voice calls** (1-on-1, peer-to-peer, echo cancellation, high-quality Opus audio)
 - **AI background-noise removal**: keyboards, fans, TV, kids and dogs are filtered out of your mic (RNNoise or GTCRN, running on your own computer)
-- **Chat** with read receipts ("Seen"), typing indicator, emoji, stickers, **photos and files** (drag, paste or 📎), and messages to friends who are offline (delivered when they sign in)
+- **Chat** with read receipts ("Seen"), typing indicator, emoji, stickers, **photos and files** (drag, paste or 📎: they wait above the message box until you press Send, so you can add a caption or change your mind), and messages to friends who are offline (delivered when they sign in)
+- **Reactions** on any message or photo (👍 ❤️ 😂 … or any emoji), **replies** that quote the message, **edit** and **delete for everyone**, *bold* / _italic_ / `code` formatting, and **search in a chat** (Ctrl+F)
+- **Link previews**: paste a YouTube link and you both see the thumbnail and title; other sites show their picture and headline
+- **Save or copy photos**: hover a photo for Save, or right-click for Save / Save as… / Copy image; the photo viewer has the same, plus ← → to flip through
+- **Status**: green Online, yellow Away (by itself after 10 minutes away from the computer, or by choice), red In a call, and Do not disturb (no message sounds or pop-ups; calls ring silently)
 - **Profile pictures** and **color schemes** (Midnight, Daylight, Graphite, Ocean, Forest, Sunset, Grape, Rose, Black, or match your system)
 - **Floating mini window**: minimize Parley (or close it to the tray) during a call and a small always-on-top video of the other person stays on screen, even over fullscreen videos. Drag it anywhere, resize it from any corner.
-- **Screen sharing with computer sound**: pick a whole screen or a single window, and share what your computer is playing (YouTube, Spotify, a game) *without* sending your friend's own voice back to them
-- **Watch together**: pick a video file and it streams live to your friend in stereo, while you both keep your cameras and chat. Either of you can pause or skip.
-- **Call controls that get out of the way**: they fade after a few seconds without the mouse; double-click for full screen
+- **Screen sharing with computer sound**: pick a whole screen or a single window, and share what your computer is playing (YouTube, Spotify, a game) *without* sending your friend's own voice back to them. Your friend still sees your camera in the corner while you share.
+- **Watch together**: pick a video file (or drop it on the call) and it streams live to your friend in stereo, while you both keep your cameras and chat. Either of you can pause, skip ±10 s, or drag the seek bar.
+- **Call controls that get out of the way**: they fade after a few seconds without the mouse; double-click for full screen. The contacts list folds away during a call to give the video room, and comes back afterwards.
+- **Call niceties**: a "You're muted" warning if you talk while muted, hold Space to talk while muted, keyboard shortcuts (Ctrl+Shift+M mute, Ctrl+Shift+O camera, …), a weak-connection warning, a "speaking" ring when the camera is off, a self-view you can drag to any corner, and "Call back" on missed calls
 - **Runs in the background** (tray / menu-bar icon) so calls and messages still arrive when the window is closed; can start with your computer
 - **Updates itself**: new versions download in the background; press Restart when it says one is ready
 - **Your own ringtone**, **open links in the browser you choose**, **hideable contact bar**
@@ -50,6 +55,7 @@ Later pushes to the repo redeploy automatically.
 | `FILE_TTL_DAYS` | How long sent files stay downloadable (default 30). Photos are also kept on each computer that saw them. |
 | `GITHUB_REPO` | Where updates come from (default `deedubbelyuu/parley`) |
 | `GITHUB_TOKEN` | **Needed for updates once the repo is private.** A fine-grained token with read access to the repo's *Contents*. |
+| `LINK_PREVIEWS` | Set to `0` to turn off link previews. When on, the server fetches the page of a link someone sends (never private/internal addresses) to get its title and picture. |
 
 ### TURN server (optional but recommended)
 Most home networks connect directly. Some, like strict office Wi-Fi, some mobile hotspots and carrier-grade NAT, can't, and those calls fail with *"Couldn't connect…"*. A TURN server relays the call in that case. Get credentials from any TURN provider (Metered, Twilio, Cloudflare, or your own `coturn`) and add these to Railway:
@@ -101,16 +107,21 @@ From v1.2.0 on, Parley checks your server for a newer GitHub Release about 20 se
 | | |
 |---|---|
 | **Call** | Open a contact, then the phone icon (voice) or camera icon (video) |
-| **Chat** | Type and press Enter (Shift+Enter for a new line). 😊 opens emoji and stickers; 📎 sends photos or files, or drag them onto the chat, or paste a screenshot. Ticks show sent ✓, delivered ✓✓ and **Seen**. |
+| **Chat** | Type and press Enter (Shift+Enter for a new line). 😊 opens emoji and stickers; 📎 adds photos or files, or drag them onto the chat, or paste a screenshot. They wait above the message box (× removes one) until you press Send. Ticks show sent ✓, delivered ✓✓ and **Seen**. Formatting: `*bold*`, `_italic_`, `~strike~`, `` `code` ``. |
+| **React, reply, edit, delete** | Hover a message for quick reactions, ↩ Reply and ⋯ More, or right-click it. Click a reaction to add or take back yours. ↑ in an empty message box edits your last message. Click a quote to jump to the original. |
+| **Search** | The 🔍 in the chat header, or **Ctrl+F**. Enter goes to older matches, Shift+Enter to newer. |
+| **Save a photo** | Hover it and click ⤓ (goes to Downloads), or right-click: **Save image**, **Save image as…**, **Copy image**. Click a photo to open the viewer; ← → flips through the chat's photos. |
+| **Status** | Click your name (top left): **Available** (turns yellow "Away" by itself when you step away), **Appear away**, or **Do not disturb**. During a call everyone sees red "In a call". |
 | **Stickers** | 😊 → **Stickers**: Pip the blob, plus **+ Add your own** (any picture or GIF; transparent PNGs look best) |
 | **Profile picture** | Click your own picture (top left), or **Settings → Profile** |
-| **Mini window** | Minimize Parley during a call, close it to the tray, or press the mini-window button. Drag it anywhere; resize from any corner or edge; double-click it (or ⤢) to go back. It stays above fullscreen videos and browsers. |
+| **Mini window** | Minimize Parley during a call, close it to the tray, or press the mini-window button. Drag it anywhere; resize from any corner or edge; double-click it (or the ↗ button at its top right) to go back. It stays above fullscreen videos and browsers. |
 | **Full screen** | The full-screen button in the call, or double-click the video. Your friend's camera stays visible while you watch something together. Esc to leave. |
-| **Share screen** | Click the monitor button and pick a screen or window. Leave **Share computer sound** ticked to include what your computer is playing. Click the button again to stop. |
-| **Watch together** | Click the film button and choose a video file. Your friend sees and hears it live. Either of you can use ⏯ and ±10 s. Each of you has your own volume slider. "Stop sharing" ends it. |
-| **Hide contacts** | The ▯ button at the right end of the chat header, or **Ctrl+B** (⌘B on Mac). |
+| **Share screen** | Click the monitor button and pick a screen or window. Leave **Share computer sound** ticked to include what your computer is playing. Your camera keeps going, so your friend sees your screen big and you in the corner. Click the button again to stop. |
+| **Watch together** | Click the film button and choose a video file, or drop one onto the call. Your friend sees and hears it live, in stereo. Either of you can use ⏯, ±10 s and the seek bar. Each of you has your own volume slider. "Stop sharing" ends it. |
+| **Hide contacts / chat** | The button at the **left** of the chat header (or **Ctrl+B**, ⌘B on Mac) folds the contacts list away. During a call, the button at the **right** end hides or shows the chat (**Ctrl+Shift+C**); drag the chat's left edge to make it wider. A red number on either button means there are messages you haven't seen. |
+| **Keyboard shortcuts** | Settings → **Keyboard shortcuts** lists them all: Ctrl+Shift+M mute, hold Space to talk while muted, Ctrl+Shift+O camera, Ctrl+Shift+E share screen, Ctrl+Shift+H hang up, Ctrl+Shift+A / S answer, Ctrl+Shift+D decline (⌘ instead of Ctrl on Mac). |
 | **Background** | Closing the window keeps Parley running by the clock (Windows) / in the menu bar (Mac). Right-click that icon → **Quit Parley** to really quit. |
-| **Settings (⚙)** | Profile picture. **Color scheme**. Camera, mic and speakers (they also switch mid-call). **Background noise removal** with a **Hear yourself** test. **Call audio quality**. Auto-hide call buttons. **Read receipts** on/off. **Ringtone**. **Keep running in the background / start with your computer**. **Check for updates**. **Open links in** (desktop app). **Open log file** for troubleshooting. |
+| **Settings (⚙)** | Profile picture. **Color scheme**. Camera, mic and speakers (they also switch mid-call; during a call the ⚙ is in the call's header). **Background noise removal** with a **Hear yourself** test. **Call audio quality**. Auto-hide call buttons. **Read receipts**, **link previews** and **message sound** on/off. **Ringtone**. **Keep running in the background / start with your computer**. **Check for updates**. **Open links in** (desktop app). **Open log file** for troubleshooting. **Keyboard shortcuts**. **Sign out** (at the bottom). |
 | **Browser** | Friends can open your Railway URL in Chrome or Edge instead of installing. |
 
 Watch-together plays whatever Chromium can play: **.mp4 (H.264/AAC)** and **.webm** are safest. Some `.mkv` and HEVC files won't play. Convert them first with HandBrake or `ffmpeg -i in.mkv -c:v libx264 -c:a aac out.mp4`.
@@ -127,6 +138,8 @@ Watch-together plays whatever Chromium can play: **.mp4 (H.264/AAC)** and **.web
 - **One-on-one calls only.** Group calls need a media server (an SFU such as LiveKit). That's a reasonable v2.
 - **Chat history is stored on each device.** The server holds undelivered messages in memory, and photos/files on disk for 30 days; without a Railway Volume both are lost on redeploy (photos you already saw stay on your computer).
 - **Netflix, Disney+ and other DRM sites** show black when screen-shared; YouTube and most other sites work, sound included.
+- **Some sites don't allow link previews** (Instagram, X/Twitter and others that block bots). Those links still work, they just don't get a card.
+- **Both people need 1.3 or newer** for "screen + camera" sharing, reactions, replies and edits. Auto-update takes care of that within a few hours of a release.
 
 ## Troubleshooting
 
@@ -136,8 +149,9 @@ The desktop app keeps a log at `%APPDATA%\Parley\parley.log` (Windows) or `~/Lib
 
 ```
 package.json             ← server deps; Railway runs `npm start`
-server/server.js         ← presence, chat relay + offline queue, read receipts, profile pictures,
-                           photo/file hand-off, update proxy, call signaling, serves the web version
+server/server.js         ← presence, chat relay + offline queue (reactions, edits, deletes too), read receipts,
+                           profile pictures, photo/file hand-off, link previews, update proxy, call signaling,
+                           serves the web version
 app/                     ← Electron desktop app
   main.js                ← window, tray/background, mini window, screen picker + system sound,
                            permissions, notifications, auto-update

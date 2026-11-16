@@ -139,6 +139,7 @@ const mainWin = (app, fn) => app.evaluate(({ BrowserWindow }, src) => {
     console.log('Photos & files');
     await check('photo: sent, shrunk to ≤2048 px, shows for Bob', async () => {
       await a.setInputFiles('#attachFile', `${FX}/photo.png`);
+      await a.click('#sendBtn'); // v1.3: attachments wait in the tray until Send
       await b.waitForSelector('.msg.in .photo:not(.sticker-photo) img', { timeout: 15000 });
       await b.waitForFunction(() => document.querySelector('.msg.in .photo:not(.sticker-photo) img').naturalWidth > 0, null, { timeout: 10000 });
       const f = await b.evaluate(() => window.__parleyDebug.history('Alice').filter((m) => m.file && !m.file.sticker).at(-1).file);
@@ -156,6 +157,7 @@ const mainWin = (app, fn) => app.evaluate(({ BrowserWindow }, src) => {
     });
     await check('file (3 MB): upload progress, then a file card for Bob', async () => {
       await a.setInputFiles('#attachFile', `${FX}/doc.bin`);
+      await a.click('#sendBtn'); // v1.3: attachments wait in the tray until Send
       await b.waitForSelector('.msg.in .file-card .file-name:has-text("doc.bin")', { timeout: 15000 });
       return a.evaluate(() => window.__parleyDebug.history('Bob').at(-1).status !== 'failed');
     });
@@ -171,6 +173,7 @@ const mainWin = (app, fn) => app.evaluate(({ BrowserWindow }, src) => {
       const dl = await A.app.evaluate(({ app }) => app.getPath('downloads'));
       fs.rmSync(path.join(dl, 'ring.wav'), { force: true });
       await b.setInputFiles('#attachFile', `${FX}/ring.wav`);
+      await b.click('#sendBtn'); // v1.3: attachments wait in the tray until Send
       await a.waitForSelector('.msg.in .file-card .file-name:has-text("ring.wav")', { timeout: 15000 });
       await a.click('.msg.in .file-card:has-text("ring.wav") .icon-btn');
       for (let i = 0; i < 50 && !fs.existsSync(path.join(dl, 'ring.wav')); i++) await sleep(100);

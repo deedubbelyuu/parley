@@ -21,7 +21,10 @@ contextBridge.exposeInMainWorld('parley', {
   onMiniClosed: on('mini-closed'),
   incomingCall: () => ipcRenderer.send('incoming-call'),
   // window, tray, notifications
-  notify: (title, body, silent) => ipcRenderer.send('notify', { title, body, silent }),
+  notify: (title, body, silent, peer) => ipcRenderer.send('notify', { title, body, silent, peer }),
+  onOpenChat: on('open-chat'),
+  systemIdle: () => ipcRenderer.invoke('system-idle'),
+  onPower: on('power'),
   attention: () => ipcRenderer.send('attention'),
   focusWindow: () => ipcRenderer.send('focus-window'),
   setUnread: (n) => ipcRenderer.send('unread-count', n),
@@ -37,6 +40,8 @@ contextBridge.exposeInMainWorld('parley', {
   onUpdateStatus: on('update-status'),
   // files
   saveDownload: (name, data) => ipcRenderer.invoke('save-download', name, data),
+  saveAs: (name, data) => ipcRenderer.invoke('save-as', name, data),
+  copyImage: (data) => ipcRenderer.invoke('copy-image', data),
   openPath: (p) => ipcRenderer.send('open-path', p),
   showInFolder: (p) => ipcRenderer.send('show-in-folder', p),
   // misc

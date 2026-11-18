@@ -3,7 +3,7 @@
 End-to-end tests that run the real desktop app (Electron, "Alice") against the web version in Chrome ("Bob") through a local server. They're for a Linux machine or sandbox with Xvfb; you don't need them to use Parley.
 
 ```bash
-# one-time setup
+# one-time setup (Playwright 1.56 works with Electron 45; the 1.59 alphas can't attach to it)
 cd app && npm install && cd .. && npm install
 npm i -g playwright            # or set NODE_PATH to a playwright install
 mkdir -p /tmp/fx && cd /tmp/fx
@@ -20,6 +20,7 @@ head -c 3000000 /dev/urandom > doc.bin
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/e2e.js      # calls, noise removal, screen share, watch-together (36 checks)
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/v12.js      # v1.2: chat, photos/files, stickers, avatars, themes, tray, mini window, update proxy (40 checks)
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/v13.js      # v1.3: layout, status, tray, reactions/replies/edit/delete, search, link previews, saving photos, stereo, seek bar, screen+camera, mini window (53 checks)
+xvfb-run -a -s "-screen 0 1280x800x24" node tests/v131.js     # v1.3.1: reactions never move the chat, chat keeps following as cards/photos load, Settings at the top right, one status dot, Teams-style link cards (19 checks)
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/screens.js  # screenshots → /tmp/shots
 ```
 

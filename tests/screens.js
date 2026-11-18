@@ -10,6 +10,7 @@ const FX = '/tmp/fx';
   const site = http.createServer((req, res) => {
     if (req.url.startsWith('/pic.png')) return res.writeHead(200, { 'Content-Type': 'image/png' }), res.end(png);
     res.writeHead(200, { 'Content-Type': 'text/html' });
+    if (req.url.startsWith('/article')) return res.end('<meta property="og:title" content="Fluffy buttermilk pancakes in 20 minutes"><meta property="og:site_name" content="Breakfast Weekly"><meta property="og:description" content="The trick is resting the batter for five minutes, and a hot, lightly buttered pan."><meta property="og:image" content="/pic.png">');
     res.end('<meta property="og:title" content="Big Buck Bunny — official trailer"><meta property="og:type" content="video.other"><meta property="og:site_name" content="YouTube"><meta property="og:description" content="Blender Foundation"><meta property="og:image" content="/pic.png">');
   }).listen(3997);
   const A = await H.launchElectron([`--use-file-for-fake-audio-capture=${FX}/noise.wav`]);
@@ -47,6 +48,8 @@ const FX = '/tmp/fx';
     await b.click('#sendBtn');
     await H.sleep(1500);
     await say(a, 'trailer: http://localhost:3997/watch');
+    await say(b, 'https://www.youtube.com/watch?v=aqz-KE-bpKQ&si=AbCdEfGhIjKlMnOp&pp=ygUJYnVubnk%3D');
+    await say(b, 'and breakfast after? http://localhost:3997/article');
     await H.sleep(1500);
     await b.hover('.msg.in:has-text("7pm works") .bubble');
     await b.click('.msg.in:has-text("7pm works") .msg-actions .emo[title="React ❤️"]');

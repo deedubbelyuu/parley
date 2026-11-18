@@ -38,9 +38,8 @@
         <button class="avatar-btn" id="myAvatarBtn" title="Change your profile picture"><div class="avatar" id="myAvatar"></div></button>
         <button class="me-text" id="statusBtn" title="Set your status">
           <span class="me-name" id="myName"></span>
-          <span class="me-status" id="myStatus"><i class="sdot online"></i><span id="myStatusText">Online</span><span class="chev" data-icon="chevronDown"></span></span>
+          <span class="me-status" id="myStatus"><span id="myStatusText">Online</span><span class="chev" data-icon="chevronDown"></span></span>
         </button>
-        <button class="icon-btn" id="settingsBtn" title="Settings" data-icon="settings"></button>
       </div>
       <div id="statusMenu" class="menu status-menu hidden" role="menu">
         <button data-status="auto" role="menuitemradio"><i class="sdot online"></i><span><b>Available</b><small>Shows Away by itself when you step away</small></span></button>
@@ -61,6 +60,7 @@
     <section class="content">
       <div id="empty" class="empty">
         <button class="icon-btn sidebar-toggle floating has-badge" title="Show contacts (Ctrl+B)"><span class="ic" data-icon="panelLeftOpen"></span><span class="btn-badge hidden"></span></button>
+        <button class="icon-btn settings-floating" id="emptySettingsBtn" title="Settings (Ctrl+,)" data-icon="settings"></button>
         <div class="empty-art"><span data-icon="chat"></span></div>
         <h2>Say hi to someone</h2>
         <p>Pick a person on the left to chat or call.</p>
@@ -78,8 +78,8 @@
           <button class="icon-btn" id="findBtn" title="Search this chat (Ctrl+F)" data-icon="search"></button>
           <button class="icon-btn round" id="audioCallBtn" title="Voice call" data-icon="phone"></button>
           <button class="icon-btn round accent" id="videoCallBtn" title="Video call" data-icon="video"></button>
-          <span class="header-sep in-call-only"></span>
-          <button class="icon-btn in-call-only" id="callSettingsBtn" title="Settings — camera, microphone, speakers, noise removal" data-icon="settings"></button>
+          <span class="header-sep"></span>
+          <button class="icon-btn" id="settingsBtn" title="Settings (Ctrl+,)" data-icon="settings"></button>
           <button class="icon-btn has-badge in-call-only" id="chatPanelBtn" title="Hide chat"><span class="ic" data-icon="panelRightClose"></span><span class="btn-badge hidden"></span></button>
         </header>
         <div id="findBar" class="find-bar hidden">

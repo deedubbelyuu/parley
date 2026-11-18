@@ -202,7 +202,8 @@
       if (m[1]) {
         const a = document.createElement('a');
         a.href = tok;
-        a.textContent = tok;
+        a.textContent = prettyUrl(tok);
+        if (a.textContent !== tok) a.title = tok;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         el.append(a);
@@ -487,7 +488,7 @@
       const t = document.getElementById('myStatusText');
       if (!t) return;
       t.textContent = STATUS_TEXT[st];
-      document.querySelector('#myStatus .sdot').className = 'sdot ' + st;
+      // the colored dot is on your picture (like everyone else's); the line under your name is just the word
       const my = document.getElementById('myAvatar');
       if (my && S.me) paintAvatar(my, S.me, st);
       document.querySelectorAll('#statusMenu button').forEach((b) => b.classList.toggle('on', b.dataset.status === this.manual));
@@ -1215,16 +1216,58 @@
   }
   function scrollToBottom() {
     const b = box();
+    const before = b.scrollTop;
     b.scrollTop = b.scrollHeight;
+    // The scroll event for this arrives a frame later. If a photo or link card has grown
+    // the list by then, we're no longer at the bottom, and the handler would wrongly read
+    // that as "you scrolled up" and stop following the chat. Mark it as ours.
+    if (b.scrollTop !== before) S.autoScroll = true;
     S.stick = true;
     $('#jumpBtn').classList.add('hidden');
   }
+  // While you're reading further up, keep the message at the top of the view exactly where
+  // it is when things above it change height (a card or photo loading, a reaction row).
+  const Anchor = {
+    id: null,
+    off: 0,
+    capture() {
+      const b = box();
+      const top = b.getBoundingClientRect().top;
+      this.id = null;
+      // the first message that starts inside the view (not one cut off at the top edge:
+      // if that one grew, everything you're reading below it would still move)
+      let fallback = null;
+      for (const n of $('#msgList').children) {
+        if (!n.dataset.id) continue;
+        const r = n.getBoundingClientRect();
+        if (r.bottom <= top + 1) continue;
+        fallback ||= [n, r];
+        if (r.top >= top - 1) {
+          fallback = [n, r];
+          break;
+        }
+      }
+      if (fallback) {
+        this.id = fallback[0].dataset.id;
+        this.off = fallback[1].top - top;
+      }
+    },
+    restore() {
+      if (!this.id) return;
+      const n = document.querySelector(`#msgList .msg[data-id="${CSS.escape(this.id)}"]`);
+      if (!n) return;
+      const b = box();
+      const d = n.getBoundingClientRect().top - b.getBoundingClientRect().top - this.off;
+      if (Math.abs(d) >= 1) b.scrollTop += d;
+    },
+  };
   const GROUP_MS = 3 * 60 * 1000;
   function renderMessages(forceBottom) {
     if (!S.active) return;
     const list = $('#msgList');
     const h = history(S.active);
     const wasStuck = S.stick || forceBottom;
+    if (!wasStuck) Anchor.capture(); // before anything below touches nodes that are on screen
     const prevCount = list.querySelectorAll('.msg.in').length;
     // newest outgoing message the other person has seen
     let seenId = null;
@@ -1264,10 +1307,14 @@
       const seen = m.id === seenId;
       const f = m.file;
       const sig = [m.status, first, last, seen, f?.id, f?.gone, f?.saved, m.failed, m.rev || 0, Avatars.get(m.dir === 'in' ? S.active : '').length].join('|');
+      const rx = m.deleted ? '' : JSON.stringify(m.reactions || {});
       let cached = MsgView.nodes.get(m.id);
       if (!cached || cached.sig !== sig) {
-        cached = { sig, node: buildMessage(m, { first, last, seen }) };
+        cached = { sig, rx, node: buildMessage(m, { first, last, seen }) };
         MsgView.nodes.set(m.id, cached);
+      } else if (cached.rx !== rx) {
+        patchReactions(cached.node, m);
+        cached.rx = rx;
       }
       out.push(cached.node);
     }
@@ -1275,7 +1322,8 @@
     if (Find.isOpen()) Find.paint();
     const newIn = list.querySelectorAll('.msg.in').length > prevCount && prevCount > 0;
     if (wasStuck) scrollToBottom();
-    else if (newIn) {
+    else Anchor.restore();
+    if (!wasStuck && newIn) {
       $('#jumpText').textContent = 'New messages';
       $('#jumpBtn').classList.remove('hidden');
     }
@@ -1365,7 +1413,7 @@
       } else formatText(b, m.text || '');
       wrap.append(b);
       const url = Previews.enabled() && firstUrl(m.text);
-      if (url) Previews.attach(wrap, url);
+      if (url) Previews.attach(b, url); // inside the bubble, under the text, like Teams
     }
     const rx = !m.deleted && reactionsEl(m);
     if (rx) wrap.append(rx);
@@ -1457,7 +1505,13 @@
     if (on) list.push(who);
     if (list.length) r[emoji] = list;
     else delete r[emoji];
-    bump(m);
+    // no bump(m): renderMessages swaps just the reaction row in place, so the message
+    // (and its photo or link card) isn't rebuilt and nothing around it moves
+  }
+  function patchReactions(node, m) {
+    node.querySelector(':scope > .reactions')?.remove();
+    const rx = !m.deleted && reactionsEl(m);
+    if (rx) node.insertBefore(rx, node.querySelector(':scope > .meta, :scope > .seen, :scope > .msg-actions'));
   }
   function relay(payload) {
     if (!wsSend(payload)) S.outbox.push(payload);
@@ -1705,9 +1759,16 @@
         return null;
       })();
       this.mem.set(url, job);
+      job.then((d) => this.done.set(url, d));
       return job;
     },
+    done: new Map(), // url -> data (or null) once known, so rebuilt messages get their card at once
     attach(wrap, url) {
+      if (this.done.has(url)) {
+        const d = this.done.get(url);
+        if (d) wrap.append(this.card(d, url));
+        return;
+      }
       const slot = document.createElement('div');
       slot.className = 'lp-slot';
       wrap.append(slot);
@@ -1716,9 +1777,12 @@
         else slot.remove();
       });
     },
+    // Teams-style card inside the message bubble: a fixed-size thumbnail on the left,
+    // then title (the link), channel or description, and the site at the bottom.
     card(d, url) {
+      const video = d.kind === 'video';
       const a = document.createElement('a');
-      a.className = 'lp' + (d.kind === 'video' ? ' video' : '');
+      a.className = 'lp' + (video ? ' video' : '');
       a.href = url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
@@ -1727,30 +1791,61 @@
         const im = document.createElement('div');
         im.className = 'lp-img';
         im.style.backgroundImage = `url("${d.image}")`;
-        if (d.kind === 'video') im.insertAdjacentHTML('beforeend', `<span class="lp-play">${icon('playFill')}</span>`);
+        if (video) im.insertAdjacentHTML('beforeend', `<span class="lp-play">${icon('playFill')}</span>`);
+        else if (d._small !== undefined) a.classList.toggle('small', d._small);
         else {
-          // small, square-ish pictures (logos) look better beside the text than stretched on top
+          // small, square-ish pictures (logos, icons) are shown whole in a square instead of cropped
           const probe = new Image();
           probe.onload = () => {
-            if (probe.naturalWidth < 360 || probe.naturalWidth / probe.naturalHeight < 1.3) a.classList.add('small');
+            d._small = probe.naturalWidth < 360 || probe.naturalWidth / probe.naturalHeight < 1.3;
+            a.classList.toggle('small', d._small);
           };
           probe.src = d.image;
         }
         a.append(im);
-      }
+      } else a.classList.add('no-img');
       const body = document.createElement('div');
       body.className = 'lp-body';
-      for (const [cls, text] of [['lp-site', d.site], ['lp-title', d.title], ['lp-desc', d.description]]) {
+      const author = d.author || (video ? d.description : '');
+      const sub = video ? author : d.description;
+      for (const [cls, text] of [['lp-title', d.title], ['lp-desc', sub]]) {
         if (!text) continue;
         const e = document.createElement('div');
         e.className = cls;
         e.textContent = text;
         body.append(e);
       }
+      const site = document.createElement('div');
+      site.className = 'lp-site';
+      site.innerHTML = icon(video ? 'video' : 'link');
+      site.append(d.site || d.domain || hostOf(url));
+      body.append(site);
       a.append(body);
       return a;
     },
   };
+  function hostOf(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  }
+  // Long links read badly in a bubble ("https://www.youtube.com/watch?v=…&si=…&pp=…"), so the
+  // text shows a tidy version; the link itself (and its tooltip) is the full address.
+  function prettyUrl(url) {
+    let u;
+    try {
+      u = new URL(url);
+    } catch {
+      return url;
+    }
+    if (/(^|\.)(youtube\.com|youtu\.be)$/.test(u.hostname)) for (const k of ['si', 'feature', 'pp', 'ab_channel', 'embeds_referring_euri']) u.searchParams.delete(k);
+    let t = u.hostname.replace(/^www\./, '') + (u.pathname === '/' ? '' : u.pathname) + u.search + u.hash;
+    t = t.replace(/\/$/, '');
+    if (url.length <= 48) return url.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    return t.length > 52 ? t.slice(0, 36) + '…' + t.slice(-12) : t;
+  }
 
   function sendPayload(m, extra) {
     const payload = { type: 'chat', to: m.to, id: m.id, text: m.text || '', ...(m.reply ? { reply: m.reply } : {}), ...extra };
@@ -4500,6 +4595,7 @@
   const SHORTCUTS = [
     [`${KEY_MOD}+B`, 'Show / hide contacts'],
     [`${KEY_MOD}+F`, 'Search this chat'],
+    [`${KEY_MOD}+,`, 'Settings'],
     [`${KEY_MOD}+Shift+C`, 'Show / hide the chat during a call'],
     [`${KEY_MOD}+Shift+M`, 'Mute / unmute'],
     ['Hold Space', 'Talk while you’re muted (let go to mute again)'],
@@ -4650,6 +4746,10 @@
         e.preventDefault();
         setSidebarHidden(!$('#main').classList.contains('sidebar-hidden'));
       }
+      if (mod && !e.shiftKey && !e.altKey && k === ',' && S.signedIn && $('#settings').classList.contains('hidden')) {
+        e.preventDefault();
+        openSettings();
+      }
       if (mod && !e.shiftKey && !e.altKey && k === 'f' && S.active && !$('#main').classList.contains('hidden')) {
         e.preventDefault();
         if (Call.state !== 'idle' && $('#convo').classList.contains('chat-hidden')) setChatHidden(false);
@@ -4722,7 +4822,7 @@
     });
     $('#search').addEventListener('input', renderContacts);
     $('#settingsBtn').addEventListener('click', openSettings);
-    $('#callSettingsBtn').addEventListener('click', openSettings);
+    $('#emptySettingsBtn').addEventListener('click', openSettings);
     // status menu
     $('#statusBtn').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4800,7 +4900,14 @@
       msgBox.classList.add('scrolling');
       clearTimeout(scrollT);
       scrollT = setTimeout(() => msgBox.classList.remove('scrolling'), 160);
-      S.stick = atBottom();
+      if (S.autoScroll) {
+        // our own scroll-to-bottom; if the list grew since, finish the job instead of unsticking
+        S.autoScroll = false;
+        if (S.stick && !atBottom()) scrollToBottom();
+      } else {
+        S.stick = atBottom();
+        if (!S.stick) Anchor.capture();
+      }
       if (S.stick) {
         $('#jumpBtn').classList.add('hidden');
         if (S.active) sendRead(S.active);
@@ -4808,7 +4915,7 @@
     });
     // Anything that changes the list's height (photos loading, window resizing, the
     // composer growing) keeps you at the newest message if you were there.
-    const ro = new ResizeObserver(() => S.stick && scrollToBottom());
+    const ro = new ResizeObserver(() => (S.stick ? scrollToBottom() : Anchor.restore()));
     ro.observe(msgBox);
     ro.observe($('#msgList'));
     $('#jumpBtn').addEventListener('click', scrollToBottom);

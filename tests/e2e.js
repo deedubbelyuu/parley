@@ -163,7 +163,7 @@ const rmsOf = (page, which) =>
       return /maxaveragebitrate=64000/.test(line) && /useinbandfec=1/.test(line);
     });
     await check('switch to Strong (GTCRN) mid-call', async () => {
-      await a.click('#callSettingsBtn'); // v1.3: in a call the gear is in the call header
+      await a.click('#settingsBtn'); // the gear is always at the right end of the chat header
       await a.selectOption('#noiseSelect', 'strong');
       await a.waitForFunction(() => window.__parleyDebug.Call.audioTrack._noise === 'strong', null, { timeout: 8000 });
       await a.click('#settingsDone');
@@ -179,7 +179,7 @@ const rmsOf = (page, which) =>
       return out < raw * 0.25;
     });
     await check('turning noise removal off sends the plain mic', async () => {
-      await a.click('#callSettingsBtn'); // v1.3: in a call the gear is in the call header
+      await a.click('#settingsBtn'); // the gear is always at the right end of the chat header
       await a.selectOption('#noiseSelect', 'off');
       await a.waitForFunction(() => !window.__parleyDebug.Call.audioTrack._noise, null, { timeout: 5000 });
       await a.selectOption('#noiseSelect', 'standard');

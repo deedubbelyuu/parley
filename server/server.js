@@ -310,7 +310,7 @@ async function buildPreview(raw) {
     } catch {}
     const image = (await imageData(`https://i.ytimg.com/vi/${yt}/hqdefault.jpg`)) || (await imageData(`https://i.ytimg.com/vi/${yt}/mqdefault.jpg`));
     if (!title && !image) return null;
-    return { url: u.href, kind: 'video', site: 'YouTube', title: title || 'YouTube video', description: author, image };
+    return { url: u.href, kind: 'video', site: 'YouTube', domain: 'youtube.com', title: title || 'YouTube video', author, description: author, image };
   }
   const page = await fetchCapped(u.href, { accept: 'text/html,application/xhtml+xml', max: 600_000 });
   const type = page.type.toLowerCase();
@@ -333,6 +333,7 @@ async function buildPreview(raw) {
     url: page.url,
     kind: /video/.test(ogType) ? 'video' : 'page',
     site: pick('og:site_name', 'application-name') || new URL(page.url).hostname.replace(/^www\./, ''),
+    domain: new URL(page.url).hostname.replace(/^www\./, ''),
     title: t.slice(0, 200),
     description: pick('og:description', 'twitter:description', 'description').slice(0, 300),
     image: img ? await imageData(img) : '',

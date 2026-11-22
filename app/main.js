@@ -248,9 +248,19 @@ const startHidden =
 
 function showMain() {
   if (!win) return createWindow(true);
+  if (IS_MAC) {
+    // Bring Parley itself to the front first. A Mac app that isn't active can restore its window
+    // behind everything else (or not at all), which made the mini window's ↗ button look dead.
+    try {
+      if (app.dock && !app.dock.isVisible()) app.dock.show();
+      app.show();
+      app.focus({ steal: true });
+    } catch {}
+  }
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+  if (IS_MAC) win.moveTop();
   win.flashFrame(false);
 }
 
@@ -393,7 +403,9 @@ function miniOptions() {
     show: false,
     title: 'Parley',
     backgroundColor: '#000000',
-    ...(IS_MAC ? { type: 'panel' } : {}),
+    // Mac: a 'panel' floats above other apps' full-screen windows on its own. acceptFirstMouse
+    // makes the first click on its buttons count even when Parley isn't the active app.
+    ...(IS_MAC ? { type: 'panel', acceptFirstMouse: true } : {}),
     webPreferences: { backgroundThrottling: false },
   };
 }
@@ -402,7 +414,10 @@ let topTimer = null;
 function setupMini(child) {
   miniWin = child;
   child.setAlwaysOnTop(true, 'screen-saver');
-  if (IS_MAC) child.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // skipTransformProcessType: without it Electron hides Parley's Dock icon (turns it into a
+  // menu-bar-only app) while the mini window is open. The main window was minimized *into* that
+  // Dock, so on Mac it could never be brought back: the mini window's ↗ button did nothing.
+  if (IS_MAC) child.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   child.setMenu?.(null);
   const remember = () => {
     if (!child.isDestroyed()) {
@@ -451,7 +466,17 @@ ipcMain.on('mini-set-bounds', (_e, b) => {
   const height = Math.max(MINI_MIN.height, n(b.height));
   miniWin.setBounds({ x: n(b.x), y: n(b.y), width, height });
 });
-ipcMain.on('mini-expand', () => showMain());
+ipcMain.on('mini-expand', () => {
+  log('mini window: back to the full window');
+  const m = miniWin;
+  showMain();
+  // Don't rely on the window's restore/show events alone (on Mac they don't always fire when
+  // the window comes back from the Dock): close the mini window ourselves. Only that same
+  // mini window, though, not a new one opened in the meantime.
+  setTimeout(() => {
+    if (m && !m.isDestroyed() && miniWin === m && win && win.isVisible() && !win.isMinimized()) closeMini();
+  }, 150);
+});
 
 // ---------------------------------------------------------------- tray (background running)
 function trayIcon(unread) {
@@ -719,6 +744,99 @@ ipcMain.handle('request-media-access', async () => {
   const camera = await systemPreferences.askForMediaAccess('camera').catch(() => false);
   const microphone = await systemPreferences.askForMediaAccess('microphone').catch(() => false);
   return { camera, microphone };
+});
+
+// Mac screen recording permission.
+// Parley isn't signed with a paid Apple certificate, so every update has a new signature, and
+// macOS quietly stops trusting the old "allowed" switch for it (the switch in System Settings
+// still LOOKS on). Screen sharing then fails every time. The fix is to make macOS forget Parley
+// (tccutil reset) so it asks again for this version, then restart Parley.
+const BUNDLE_ID = (() => {
+  try {
+    return require('./package.json').build.appId || 'com.daylen.parley';
+  } catch {
+    return 'com.daylen.parley';
+  }
+})();
+ipcMain.handle('screen-permission', () => {
+  if (!IS_MAC) return 'granted';
+  try {
+    return systemPreferences.getMediaAccessStatus('screen');
+  } catch {
+    return 'unknown';
+  }
+});
+const tccReset = (service) =>
+  new Promise((resolve) => {
+    execFile('/usr/bin/tccutil', ['reset', service, BUNDLE_ID], (err, stdout, stderr) => {
+      log('tccutil reset', service, err ? `failed: ${String(stderr || err.message).trim()}` : 'ok');
+      resolve(!err);
+    });
+  });
+ipcMain.handle('fix-screen-permission', async () => {
+  if (!IS_MAC) return { ok: true, status: 'granted' };
+  const before = systemPreferences.getMediaAccessStatus('screen');
+  const screenReset = await tccReset('ScreenCapture');
+  await tccReset('AudioCapture'); // "System Audio Recording" (shared computer sound), macOS 14.2+
+  // Asking for the screen list makes macOS show its "Parley would like to record…" prompt.
+  try {
+    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 16, height: 16 } });
+  } catch (e) {
+    log('getSources after reset failed', String(e));
+  }
+  const after = systemPreferences.getMediaAccessStatus('screen');
+  log('screen permission fix', { before, after, screenReset });
+  return { ok: screenReset, status: after };
+});
+ipcMain.on('relaunch-app', () => {
+  log('relaunching (asked by the UI)');
+  quitting = true;
+  app.relaunch();
+  app.quit();
+});
+
+// ---------------------------------------------------------------- call snapshots
+// A full-resolution screenshot of the display Parley is on (or the screen you're sharing).
+// desktopCapturer hands back a thumbnail at exactly the size we ask for, so asking for the
+// display's real pixel size gives a real screenshot, not the scaled-down video of a share.
+ipcMain.handle('snapshot-screen', async (_e, sharedId) => {
+  try {
+    if (IS_MAC && systemPreferences.getMediaAccessStatus('screen') !== 'granted') return { error: 'permission' };
+    let display = null;
+    if (typeof sharedId === 'string' && sharedId.startsWith('screen:')) {
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
+      const s = sources.find((x) => x.id === sharedId);
+      if (s) display = screen.getAllDisplays().find((d) => String(d.id) === String(s.display_id)) || null;
+    }
+    if (!display) {
+      const ref = win && win.isVisible() && !win.isMinimized() ? win : miniWin && !miniWin.isDestroyed() ? miniWin : null;
+      display = ref ? screen.getDisplayMatching(ref.getBounds()) : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    }
+    const width = Math.round(display.size.width * display.scaleFactor);
+    const height = Math.round(display.size.height * display.scaleFactor);
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+    const src = sources.find((s) => String(s.display_id) === String(display.id)) || (sources.length === 1 ? sources[0] : sources[0]);
+    if (!src || src.thumbnail.isEmpty()) return { error: 'empty' };
+    const size = src.thumbnail.getSize();
+    const png = src.thumbnail.toPNG();
+    log('snapshot: screen', size, `${Math.round(png.length / 1024)} KB`);
+    return { data: png, width: size.width, height: size.height };
+  } catch (e) {
+    log('snapshot: screen failed', String(e && e.stack ? e.stack : e));
+    return { error: String(e && e.message ? e.message : e) };
+  }
+});
+// Saved into Pictures/Parley Snapshots/<when> - <who>/
+ipcMain.handle('save-snapshot', async (_e, folder, name, data) => {
+  const clean = (s) => String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120).trim() || 'snapshot';
+  const dir = path.join(app.getPath('pictures'), 'Parley Snapshots', clean(folder));
+  fs.mkdirSync(dir, { recursive: true });
+  const p = uniquePath(dir, clean(name));
+  await fs.promises.writeFile(p, Buffer.from(data));
+  savedPaths.add(p);
+  savedPaths.add(dir);
+  log('snapshot saved', p);
+  return { file: p, dir };
 });
 
 ipcMain.on('open-privacy-settings', (_e, which) => {

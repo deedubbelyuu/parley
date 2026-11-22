@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('parley', {
   loopbackSupported: () => ipcRenderer.invoke('loopback-supported'),
   requestMediaAccess: () => ipcRenderer.invoke('request-media-access'),
   openPrivacySettings: (which) => ipcRenderer.send('open-privacy-settings', which),
+  screenPermission: () => ipcRenderer.invoke('screen-permission'),
+  fixScreenPermission: () => ipcRenderer.invoke('fix-screen-permission'),
+  relaunch: () => ipcRenderer.send('relaunch-app'),
+  // call snapshots
+  snapshotScreen: (sharedId) => ipcRenderer.invoke('snapshot-screen', sharedId || null),
+  saveSnapshot: (folder, name, data) => ipcRenderer.invoke('save-snapshot', folder, name, data),
   // calls + mini window
   setCallState: (active) => ipcRenderer.send('call-state', !!active),
   goMini: () => ipcRenderer.send('go-mini'),

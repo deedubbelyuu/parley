@@ -21,6 +21,7 @@ xvfb-run -a -s "-screen 0 1280x800x24" node tests/e2e.js      # calls, noise rem
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/v12.js      # v1.2: chat, photos/files, stickers, avatars, themes, tray, mini window, update proxy (40 checks)
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/v13.js      # v1.3: layout, status, tray, reactions/replies/edit/delete, search, link previews, saving photos, stereo, seek bar, screen+camera, mini window (53 checks)
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/v131.js     # v1.3.1: reactions never move the chat, chat keeps following as cards/photos load, Settings at the top right, one status dot, Teams-style link cards (19 checks)
+xvfb-run -a -s "-screen 0 1280x800x24" node tests/v14.js      # v1.4: exact mic/camera choice + live switching, call volume, call snapshots (full-res screen + camera, saved to Pictures), mini window back button, Mac permission help (21 checks)
 xvfb-run -a -s "-screen 0 1280x800x24" node tests/screens.js  # screenshots → /tmp/shots
 ```
 

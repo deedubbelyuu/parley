@@ -498,6 +498,7 @@ function cleanFileRef(f) {
   const meta = files.get(f.id);
   if (!meta) return null;
   const int = (v, max) => (Number.isFinite(+v) && +v > 0 ? Math.min(max, Math.round(+v)) : undefined);
+  const snap = cleanSnap(f.snap);
   return {
     id: f.id,
     name: meta.name,
@@ -507,7 +508,15 @@ function cleanFileRef(f) {
     w: int(f.w, 20000),
     h: int(f.h, 20000),
     sticker: !!f.sticker,
+    ...(snap ? { snap } : {}),
   };
+}
+// Call snapshots: which snapshot a picture belongs to, whose it is, and screen or camera.
+function cleanSnap(sn) {
+  if (!sn || typeof sn !== 'object') return null;
+  const id = String(sn.id || '').slice(0, 40);
+  if (!/^[a-z0-9]{4,40}$/i.test(id)) return null;
+  return { id, what: sn.what === 'screen' ? 'screen' : 'face', of: String(sn.of || '').slice(0, 40) };
 }
 
 wss.on('connection', (ws) => {

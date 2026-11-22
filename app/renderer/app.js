@@ -30,6 +30,8 @@
     hangup: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 8.6c-3.7 0-7.2 1.2-9.6 3.3-.6.5-.7 1.4-.3 2.1l1.5 2.3c.4.6 1.2.9 1.9.6l3-1.2c.6-.2 1-.8 1-1.4v-2c.8-.3 1.6-.4 2.5-.4s1.7.1 2.5.4v2c0 .6.4 1.2 1 1.4l3 1.2c.7.3 1.5 0 1.9-.6l1.5-2.3c.4-.7.3-1.6-.3-2.1-2.4-2.1-5.9-3.3-9.6-3.3z"/></svg>',
     send: P('<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>'),
     volume: P('<path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
+    volumeOff: P('<path d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6"/>'),
+    snap: P('<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/>'),
     sidebar: P('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>'),
     panelLeftClose: P('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18M16 15l-3-3 3-3"/>'),
     panelLeftOpen: P('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18M14 9l3 3-3 3"/>'),
@@ -164,6 +166,7 @@
       b.textContent = action.label;
       b.onclick = () => {
         t.classList.remove('show');
+        t.style.pointerEvents = '';
         action.fn();
       };
       t.append(' ', b);
@@ -171,7 +174,11 @@
     t.style.pointerEvents = action ? 'auto' : '';
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+    // (a hidden toast must never keep catching clicks meant for the call buttons under it)
+    toastTimer = setTimeout(() => {
+      t.classList.remove('show');
+      t.style.pointerEvents = '';
+    }, ms);
   }
   // Writes to the console and (desktop app) to parley.log — "Open log file" in Settings.
   function log(...parts) {
@@ -690,6 +697,7 @@
     if (!m) return '';
     if (m.deleted) return 'Deleted message';
     if (m.sticker || m.file?.sticker) return 'Sticker';
+    if (m.file?.snap) return `📸 ${snapLabel(m.file.snap)}`;
     if (m.file) return m.file.kind === 'image' ? '📷 Photo' : `📎 ${m.file.name}`;
     return String(m.text || '').replace(/\s+/g, ' ').slice(0, 140);
   }
@@ -832,6 +840,7 @@
         if (history(peer).some((m) => m.id === msg.id)) break; // duplicate after reconnect
         addToHistory(peer, entry);
         if (entry.file && (entry.file.kind === 'image' || entry.file.sticker)) Files.ensure(entry);
+        if (entry.file?.snap) Snap.onIncoming(entry);
         clearTyping();
         const viewing = isViewing(peer);
         if (!viewing) {
@@ -1402,6 +1411,13 @@
         pw.append(tools);
       }
       wrap.append(pw);
+      if (f.snap) {
+        const cap = document.createElement('div');
+        cap.className = 'snap-caption';
+        cap.innerHTML = icon('snap');
+        cap.append(`Snapshot · ${snapLabel(f.snap)}` + (f.w && f.h ? ` · ${f.w}×${f.h}` : ''));
+        wrap.append(cap);
+      }
     } else if (f) {
       wrap.append(Files.card(m));
     } else {
@@ -1930,8 +1946,9 @@
     },
 
     // ---- sending
-    async prepare(file, sticker) {
+    async prepare(file, sticker, full) {
       const type = file.type || '';
+      if (full && /^image\//.test(type) && file.w && file.h) return { blob: file, name: file.name, type, kind: 'image', w: file.w, h: file.h };
       if (!/^image\/(jpeg|png|webp|gif|bmp|avif)$/.test(type)) return { blob: file, name: file.name, type: type || 'application/octet-stream', kind: 'file' };
       let bmp;
       try {
@@ -1962,17 +1979,18 @@
       return { blob, name: `${base}.${keepAlpha ? 'webp' : 'jpg'}`, type: outType, kind: 'image', w: c.width, h: c.height };
     },
 
-    async send(file, { sticker = false, to = S.active, reply = null } = {}) {
+    // full = keep every pixel (call snapshots): no shrinking, no re-compressing.
+    async send(file, { sticker = false, to = S.active, reply = null, full = false, snap = null } = {}) {
       if (!to) return;
       const maxB = (S.limits.maxFileMB || 100) * 1048576;
       if (file.size > maxB) return toast(`${file.name || 'That file'} is too big (max ${S.limits.maxFileMB} MB).`, 5000);
-      const p = await this.prepare(file, sticker);
+      const p = await this.prepare(file, sticker, full);
       const id = uid();
       const key = `f:${id}`;
       await FileStore.put(key, { blob: p.blob, name: p.name }).catch((e) => log('local file save failed', errText(e)));
       const m = {
         id, from: S.me, to, text: '', ts: Date.now(), dir: 'out', status: 'uploading',
-        file: { key, name: p.name, size: p.blob.size, type: p.type, kind: p.kind, w: p.w, h: p.h, sticker },
+        file: { key, name: p.name, size: p.blob.size, type: p.type, kind: p.kind, w: p.w, h: p.h, sticker, ...(snap ? { snap } : {}) },
         ...(reply ? { reply } : {}),
       };
       addToHistory(to, m);
@@ -2014,8 +2032,8 @@
         saveHistory(m.to);
         // also keep it under the shared key so it survives in this device's cache
         this.blob(f.key).then((b) => b && FileStore.put(`file:${res.id}`, { blob: b, name: f.name }).catch(() => {}));
-        const label = f.sticker ? '[Sticker]' : f.kind === 'image' ? '📷 Photo' : `📎 ${f.name} (${fmtSize(f.size)})`;
-        sendPayload(m, { text: label, file: { id: res.id, kind: f.kind, w: f.w, h: f.h, sticker: !!f.sticker } });
+        const label = f.sticker ? '[Sticker]' : f.snap ? `📸 Snapshot: ${snapLabel(f.snap)}` : f.kind === 'image' ? '📷 Photo' : `📎 ${f.name} (${fmtSize(f.size)})`;
+        sendPayload(m, { text: label, file: { id: res.id, kind: f.kind, w: f.w, h: f.h, sticker: !!f.sticker, ...(f.snap ? { snap: f.snap } : {}) } });
         if (S.active && keyOf(S.active) === keyOf(m.to)) renderMessages(false);
         done();
       };
@@ -2642,20 +2660,77 @@
     t._parleyPlaceholder = true;
     return t;
   }
+  const IS_MAC_APP = electron?.platform === 'darwin';
   function audioConstraints() {
     const p = store.get('devices', {});
     // 'all' = remove everything the computer plays (shared videos, notifications) from the mic,
     // not just the call audio. Engines that don't know 'all' treat it as plain `true`.
+    // Mac: NOT 'all'. There Chromium does 'all' with macOS's own voice processing, which grabs
+    // the default microphone whatever you picked and turns everything else you hear down
+    // (the "can't change the mic / can't change the volume" bugs). Plain `true` uses Chromium's
+    // own echo canceller, which works with any mic and leaves the volume alone.
     // The built-in noise filter only handles steady hiss; when the AI filter is on we turn the
     // built-in one off so the two don't fight (double filtering makes voices watery).
     return {
-      echoCancellation: 'all',
+      echoCancellation: IS_MAC_APP ? true : 'all',
       noiseSuppression: NoiseFX.mode() === 'off',
       autoGainControl: true,
       channelCount: { ideal: 1 },
       sampleRate: { ideal: 48000 },
       ...(p.mic ? { deviceId: { ideal: p.mic } } : {}),
     };
+  }
+
+  // Open the microphone you picked: exactly that one, not "something close". (`ideal` let the
+  // browser pick another mic; on Mac it usually picked the built-in one.) Falls back step by step
+  // so a missing or busy mic still gives you *a* microphone.
+  async function getMic(id = store.get('devices', {}).mic) {
+    const base = audioConstraints();
+    delete base.deviceId;
+    const tries = [];
+    if (id) {
+      tries.push({ ...base, deviceId: { exact: id } });
+      if (base.echoCancellation !== true) tries.push({ ...base, echoCancellation: true, deviceId: { exact: id } });
+    }
+    tries.push(base);
+    let lastErr = null;
+    for (const c of tries) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: c });
+        const t = s.getAudioTracks()[0];
+        if (!t) continue;
+        const got = t.getSettings ? t.getSettings().deviceId : '';
+        if (c.deviceId && id !== 'default' && got && got !== id) {
+          log('mic: asked for', id, 'but got', got, t.label, '— trying again');
+          t.stop();
+          continue;
+        }
+        if (id && !c.deviceId) log('mic: the chosen microphone isn’t available, using', t.label);
+        else log('mic opened:', t.label, c.echoCancellation === 'all' ? '(echo: all)' : '(echo: browser)');
+        return t;
+      } catch (e) {
+        lastErr = e;
+        log('mic open failed', JSON.stringify(c.deviceId || 'default'), errText(e));
+      }
+    }
+    throw lastErr || new Error('no microphone');
+  }
+  async function getCam(id = store.get('devices', {}).cam) {
+    const base = videoConstraints();
+    delete base.deviceId;
+    const tries = id ? [{ ...base, deviceId: { exact: id } }, base] : [base];
+    let lastErr = null;
+    for (const c of tries) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: c });
+        const t = s.getVideoTracks()[0];
+        if (t) return t;
+      } catch (e) {
+        lastErr = e;
+        log('camera open failed', JSON.stringify(c.deviceId || 'default'), errText(e));
+      }
+    }
+    throw lastErr || new Error('no camera');
   }
 
   // ------------------------------------------------------------------ AI background-noise removal
@@ -3044,6 +3119,9 @@
           if (!data.on) $('#screenAudio').srcObject = null;
           this.renderFlags();
           break;
+        case 'snap':
+          Snap.onRequest(from, data);
+          break;
         case 'screen-audio-stop':
           $('#screenAudio').srcObject = null;
           this.remoteScreenSound = false;
@@ -3204,45 +3282,39 @@
       try {
         if (electron) await electron.requestMediaAccess();
       } catch {}
-      const md = navigator.mediaDevices;
-      let stream = null;
-      let hasCam = false;
+      // Mic and camera are opened separately, each exactly the one picked in Settings.
+      let rawMic = null;
+      let cam = null;
       try {
-        stream = await md.getUserMedia({ audio: audioConstraints(), video: wantVideo ? videoConstraints() : false });
-        hasCam = wantVideo && stream.getVideoTracks().length > 0;
+        rawMic = await getMic();
       } catch (e) {
-        console.warn('getUserMedia', e);
-        if (wantVideo) {
-          try {
-            stream = await md.getUserMedia({ audio: audioConstraints() });
-            toast('Camera unavailable — continuing with audio only.');
-          } catch {}
-        }
-        if (!stream && wantVideo) {
-          try {
-            stream = await md.getUserMedia({ video: videoConstraints() });
-            hasCam = true;
-          } catch {}
-        }
-        if (!stream || !stream.getAudioTracks().length) {
-          toast('Microphone unavailable — check your OS privacy settings.', 6000);
+        log('no microphone for the call', errText(e));
+        toast('Microphone unavailable — check your OS privacy settings.', 6000);
+      }
+      if (wantVideo && this.state !== 'idle') {
+        try {
+          cam = await getCam();
+        } catch (e) {
+          if (rawMic) toast('Camera unavailable — continuing with audio only.');
         }
       }
+      const hasCam = !!cam;
       if (this.state === 'idle') {
-        stream?.getTracks().forEach((t) => t.stop());
+        rawMic?.stop();
+        cam?.stop();
         return false;
       }
-      const rawMic = stream?.getAudioTracks()[0];
       this.audioTrack = rawMic ? await NoiseFX.process(rawMic) : silentAudioTrack();
       if (this.state === 'idle') {
         stopMic(this.audioTrack);
-        stream?.getTracks().forEach((t) => t.stop());
+        rawMic?.stop();
+        cam?.stop();
         this.audioTrack = null;
         return false;
       }
       this.blackTrack = blackVideoTrack();
       MutedWatch.start(rawMic);
-      this.camTrack = hasCam ? stream.getVideoTracks()[0] : null;
+      this.camTrack = hasCam ? cam : null;
       this.camOn = hasCam;
       this.micOn = !this.audioTrack._parleyPlaceholder;
       this.refreshLocalPreview();
@@ -3296,6 +3368,53 @@
       if (raw.readyState === 'ended') return;
       await this.setMic(raw);
     },
+    // Settings → Microphone changed during a call: switch right away.
+    async switchMic(id) {
+      if (this.state === 'idle') return;
+      const old = this.audioTrack;
+      const oldRaw = old && !old._parleyPlaceholder ? old._raw || old : null;
+      if (oldRaw && id && oldRaw.getSettings?.().deviceId === id) return;
+      let raw = null;
+      try {
+        raw = await getMic(id);
+      } catch {}
+      const wrong = raw && id && id !== 'default' && raw.getSettings?.().deviceId !== id;
+      if ((!raw || wrong) && oldRaw) {
+        // Some systems only let one app-side capture use the mic hardware at a time:
+        // let go of the old mic, then try the new one again.
+        raw?.stop();
+        oldRaw.stop();
+        raw = null;
+        try {
+          raw = await getMic(id);
+        } catch {}
+        if (!raw) {
+          toast('Couldn’t switch to that microphone. Keeping the one you had.', 5000);
+          try {
+            raw = await getMic(oldRaw.getSettings?.().deviceId);
+          } catch {}
+        }
+      }
+      if (!raw) return toast('Couldn’t switch microphone.');
+      if (this.state === 'idle') return raw.stop();
+      if (old?._parleyPlaceholder) this.micOn = true;
+      await this.setMic(raw);
+      this.renderControls();
+      this.sendFlags();
+      toast(`Microphone: ${raw.label || 'switched'}`, 2500);
+    },
+    async switchCam(id) {
+      if (this.state === 'idle' || !this.camOn) return;
+      if (id && this.camTrack?.getSettings?.().deviceId === id) return;
+      try {
+        const t = await getCam(id);
+        this.camTrack?.stop();
+        this.camTrack = t;
+        await this.swapVideo();
+      } catch {
+        toast('Couldn’t switch camera.');
+      }
+    },
     applyQuality() {
       if (!this.pc) return;
       const q = quality();
@@ -3311,8 +3430,7 @@
         this.camTrack = null;
       } else {
         try {
-          const s = await navigator.mediaDevices.getUserMedia({ video: videoConstraints() });
-          this.camTrack = s.getVideoTracks()[0];
+          this.camTrack = await getCam();
           this.camOn = true;
         } catch {
           return toast('Couldn’t start your camera. Check your OS privacy settings.');
@@ -3381,6 +3499,7 @@
         if (electron) {
           const pick = await pickScreenSource();
           if (!pick) return;
+          this.screenSourceId = pick.id;
           wantedSound = !!pick.audio;
           log('screen share: start', pick.id, pick.audio ? `sound: ${pick.audio}` : 'no sound');
           this.setStatus('Starting screen share…');
@@ -3399,6 +3518,12 @@
             } catch (e) {
               lastErr = e;
               log('screen share attempt failed', mode || 'video-only', errText(e));
+              // Mac: a hang or a "not allowed" means macOS itself said no. Trying again without
+              // sound only makes you wait another 15 s for the same answer.
+              if (electron.platform === 'darwin' && mode && /Timeout|NotAllowed/.test(e?.name || '')) {
+                const perm = await electron.screenPermission?.().catch(() => 'unknown');
+                if (perm && perm !== 'granted') break;
+              }
             }
           }
           if (!stream) throw lastErr || new Error('no stream');
@@ -3412,7 +3537,10 @@
         if (e && e.name === 'NotAllowedError' && !electron) return; // user pressed Cancel in the browser picker
         log('screen share failed', errText(e));
         if (electron?.platform === 'darwin') {
-          toast('Screen sharing was blocked. Allow Parley in System Settings → Privacy & Security → Screen & System Audio Recording, then restart Parley.', 9000);
+          const perm = await electron.screenPermission?.().catch(() => 'unknown');
+          log('screen share failed; mac permission', perm);
+          if (perm !== 'granted') ScreenFix.open();
+          else toast(`Screen sharing didn’t start (${errText(e)}). Try picking a whole screen instead of a window. Settings → Open log file has details.`, 9000);
         } else {
           toast(`Screen sharing didn’t start (${errText(e)}). Settings → Open log file has details.`, 9000);
         }
@@ -3437,11 +3565,31 @@
       setMaxBitrate(this.screenSender, 2_500_000, 'maintain-resolution');
       if (this.videoSender) setMaxBitrate(this.videoSender, 700_000, 'balanced');
       this.refreshLocalPreview();
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) this.startScreenAudio(audioTrack);
-      else if (wantedSound && electron) toast('Sharing your screen without computer sound (your system didn’t allow it).', 6000);
+      // Mac: without "System Audio Recording" permission the sound track arrives already ended
+      // and silent (no error). Don't send a dead track; say what to switch on instead.
+      const audioTracks = stream.getAudioTracks();
+      const audioTrack = audioTracks.find((t) => t.readyState === 'live');
+      for (const t of audioTracks) if (t !== audioTrack) t.stop();
+      let soundOn = false;
+      if (audioTrack) {
+        try {
+          this.startScreenAudio(audioTrack);
+          soundOn = true;
+        } catch (e) {
+          log('screen sound failed to start', errText(e));
+          audioTrack.stop();
+        }
+      }
+      if (!soundOn && wantedSound && electron) {
+        toast(
+          electron.platform === 'darwin' && audioTracks.length
+            ? 'Sharing your screen without computer sound: macOS didn’t allow it. System Settings → Privacy & Security → Screen & System Audio Recording → switch Parley on under “System Audio Recording Only”, then restart Parley.'
+            : 'Sharing your screen without computer sound (your system didn’t allow it).',
+          9000
+        );
+      }
       this.renderControls();
-      this.sig({ kind: 'screen', on: true, sound: !!audioTrack, separate: true });
+      this.sig({ kind: 'screen', on: true, sound: soundOn, separate: true });
     },
 
     // Computer sound that goes along with a screen share.
@@ -3525,6 +3673,7 @@
       if (!this.screenTrack) return;
       const t = this.screenTrack;
       this.screenTrack = null;
+      this.screenSourceId = null;
       t.stop();
       this.stopScreenAudio();
       if (this.screenSender) {
@@ -3668,7 +3817,8 @@
       }
       v.controls = false;
       v.muted = false;
-      v.volume = Number($('#mediaVolume').value);
+      v.volume = Volume.get('shared');
+      $('#mediaVolume').value = v.volume;
       v.play().catch(() => {});
       $('#mediaTitle').textContent = `${this.peer} is sharing: ${this.remoteMediaTitle || 'a video'}`;
       el.stage.classList.add('has-media');
@@ -4272,6 +4422,16 @@
         resolve(id ? { id, audio } : null);
       };
       $('#pickerCancel').onclick = () => done(null);
+      // Mac: if macOS says no (often right after an update), help fix it instead of offering
+      // screens that would only fail.
+      const perm = electron.screenPermission ? await electron.screenPermission().catch(() => 'unknown') : 'granted';
+      log('screen permission', perm);
+      ScreenFix.show(perm === 'denied' || perm === 'restricted');
+      if (perm === 'denied' || perm === 'restricted') {
+        grid.innerHTML = '';
+        soundBox.closest('label').classList.add('hidden');
+        return;
+      }
       let res;
       try {
         res = await electron.getScreenSources();
@@ -4282,10 +4442,10 @@
       }
       if (res.needsPermission) {
         note.innerHTML = '';
-        note.append('macOS needs Screen Recording permission for Parley. If previews look empty, allow it and restart Parley.');
+        note.append('macOS is asking whether Parley may record the screen. Allow it, then restart Parley (Settings → App, or the button below).');
         const b = document.createElement('button');
         b.className = 'btn small';
-        b.textContent = 'Open Settings';
+        b.textContent = 'Open System Settings';
         b.onclick = () => electron.openPrivacySettings('screen');
         note.append(b);
         note.classList.remove('hidden');
@@ -4307,6 +4467,49 @@
       if (!list.length) grid.innerHTML = '<p>No screens or windows found.</p>';
     });
   }
+
+  // Mac: "Parley isn't allowed to record the screen" → reset macOS's memory of Parley, let it
+  // ask again, restart. (Unsigned builds lose the permission with every update.)
+  const ScreenFix = {
+    bound: false,
+    bind() {
+      if (this.bound) return;
+      this.bound = true;
+      $('#pickerFixBtn').onclick = async () => {
+        const st = $('#pickerFixStatus');
+        st.textContent = 'Asking macOS…';
+        const r = await electron.fixScreenPermission().catch((e) => ({ ok: false, error: errText(e) }));
+        st.textContent =
+          r.status === 'granted'
+            ? 'Allowed. Press Restart Parley to finish.'
+            : r.ok
+              ? 'Done. If macOS showed a box, choose Allow (or switch Parley on in System Settings), then press Restart Parley.'
+              : 'macOS didn’t let Parley reset it. Open System Settings, remove Parley from the list with “−”, add it again with “+”, then press Restart Parley.';
+      };
+      $('#pickerOpenPrefs').onclick = () => electron.openPrivacySettings('screen');
+      $('#pickerRelaunch').onclick = () => {
+        if (Call.state !== 'idle') Call.hangup();
+        setTimeout(() => electron.relaunch(), 300);
+      };
+    },
+    show(on) {
+      this.bind();
+      $('#pickerFix').classList.toggle('hidden', !on);
+      $('#pickerFixStatus').textContent = '';
+      $('#pickerRelaunch').textContent = Call.state !== 'idle' ? 'Hang up & restart Parley' : 'Restart Parley';
+    },
+    // Opened on its own (a share failed, or from Settings → App)
+    open() {
+      if (!electron?.fixScreenPermission) return;
+      $('#settings').classList.add('hidden');
+      $('#sourceGrid').innerHTML = '';
+      $('#pickerNote').classList.add('hidden');
+      $('#shareSoundField').classList.add('hidden');
+      this.show(true);
+      $('#screenPicker').classList.remove('hidden');
+      $('#pickerCancel').onclick = () => $('#screenPicker').classList.add('hidden');
+    },
+  };
 
   // ------------------------------------------------------------------ updates (desktop app)
   function renderUpdate(st) {
@@ -4338,6 +4541,195 @@
     renderUpdate(st);
   });
 
+  // ------------------------------------------------------------------ call snapshots
+  // One press: each of you takes a full-resolution picture of your own screen and your own
+  // camera (the real camera/screen pixels, not the squashed call video) and sends them to the
+  // other in the chat. The person who pressed it also gets all four saved in
+  // Pictures/Parley Snapshots. Your camera is only used if it's already on; your screen only if
+  // "Call snapshots include my screen" is on in Settings. The other person always sees a flash
+  // and a note that a snapshot was taken.
+  const snapLabel = (sn) => `${sn.of || 'Someone'}’s ${sn.what === 'screen' ? 'screen' : 'camera'}`;
+  const withTimeout = (p, ms, what) =>
+    Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(`${what} timed out`), { name: 'TimeoutError' })), ms))]);
+  const Snap = {
+    busy: false,
+    mine: new Map(), // snapId -> { folder, peer, at } for snapshots *I* started (auto-saved)
+    flash() {
+      const f = $('#snapFlash');
+      f.classList.remove('go');
+      void f.offsetWidth;
+      f.classList.add('go');
+      Sound.play([[2200, 0, 0.025], [1400, 0.035, 0.05]], 0.05, 'square');
+    },
+    stamp() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+    },
+    async take() {
+      if (Call.state !== 'active' || !Call.peer) return toast('Snapshots work during a call.');
+      if (this.busy) return;
+      this.busy = true;
+      $('#snapBtn').classList.add('busy');
+      const id = uid().slice(0, 20);
+      const peer = Call.peer;
+      this.mine.set(id, { folder: `${this.stamp()} - ${S.me} & ${peer}`, peer, at: Date.now() });
+      Call.sig({ kind: 'snap', snapId: id });
+      log('snapshot: start', id);
+      try {
+        const caps = await this.capture();
+        this.flash();
+        toast(caps.length ? `📸 Snapshot! Saving full-size pictures and asking ${peer}’s Parley for theirs…` : '📸 Asked for a snapshot. (Your camera is off and your screen is left out.)', 4500);
+        for (const c of caps) this.saveLocal(id, c.file);
+        await this.send(caps, id, peer);
+      } finally {
+        this.busy = false;
+        $('#snapBtn').classList.remove('busy');
+      }
+    },
+    async onRequest(from, data) {
+      const id = String(data.snapId || '').slice(0, 40);
+      if (!id || Call.state !== 'active') return;
+      log('snapshot: asked by', from, id);
+      const caps = await this.capture();
+      this.flash();
+      const what = caps.map((c) => (c.what === 'screen' ? 'your screen' : 'your camera')).join(' and ');
+      toast(what ? `📸 ${from} took a call snapshot (${what}, sent to them in the chat).` : `📸 ${from} took a call snapshot. Nothing of yours was included (camera off, screen left out in Settings).`, 6000);
+      await this.send(caps, id, from);
+    },
+    // Pictures from the other person arrive as chat photos; for snapshots I started, save them too.
+    async onIncoming(m) {
+      const sn = m.file.snap;
+      const job = this.mine.get(sn.id);
+      if (!job || Date.now() - job.at > 10 * 60e3) return;
+      const b = await Files.ensure(m);
+      if (b) this.saveLocal(sn.id, new File([b], m.file.name || `${sn.of} - ${sn.what}.png`, { type: b.type }), true);
+    },
+    async saveLocal(id, file, theirs) {
+      const job = this.mine.get(id);
+      if (!job || !electron?.saveSnapshot) return;
+      try {
+        const r = await electron.saveSnapshot(job.folder, file.name, await file.arrayBuffer());
+        job.dir = r.dir;
+        if (theirs) toast(`📸 ${job.peer}’s snapshot arrived and was saved.`, 6000, { label: 'Open folder', fn: () => electron.openPath(job.dir) });
+      } catch (e) {
+        log('snapshot: save failed', errText(e));
+      }
+    },
+    async send(caps, id, to) {
+      for (const c of caps) {
+        try {
+          await Files.send(c.file, { to, full: true, snap: { id, what: c.what, of: S.me } });
+        } catch (e) {
+          log('snapshot: send failed', c.what, errText(e));
+        }
+      }
+    },
+    async capture() {
+      const out = [];
+      if (store.get('snapScreen', true)) {
+        const sc = await this.captureScreen().catch((e) => (log('snapshot: screen failed', errText(e)), null));
+        if (sc) out.push(sc);
+      }
+      const face = await this.captureFace().catch((e) => (log('snapshot: camera failed', errText(e)), null));
+      if (face) out.push(face);
+      return out;
+    },
+    async captureScreen() {
+      if (!electron?.snapshotScreen) return null; // the browser version can't screenshot without asking
+      const r = await electron.snapshotScreen(Call.screenSourceId || null);
+      if (!r || r.error || !r.data) {
+        if (r?.error === 'permission') log('snapshot: no screen recording permission (Mac)');
+        else log('snapshot: no screen picture', r?.error);
+        return null;
+      }
+      const file = new File([r.data], `${S.me} - screen.png`, { type: 'image/png' });
+      Object.assign(file, { w: r.width, h: r.height });
+      return { what: 'screen', file };
+    },
+    // The camera's own full resolution: ask the camera for a real photo (ImageCapture) if it can
+    // take bigger ones than the call video; otherwise turn the camera up to its maximum for a
+    // moment, grab one frame and turn it back down.
+    async captureFace() {
+      const t = Call.camOn && Call.camTrack;
+      if (!t || t.readyState !== 'live') return null;
+      const cur = t.getSettings ? t.getSettings() : {};
+      let blob = null;
+      let w = 0;
+      let h = 0;
+      if (typeof ImageCapture !== 'undefined') {
+        try {
+          const ic = new ImageCapture(t);
+          const pc = await withTimeout(ic.getPhotoCapabilities(), 2500, 'photo capabilities');
+          const mw = pc?.imageWidth?.max || 0;
+          const mh = pc?.imageHeight?.max || 0;
+          if (mw > (cur.width || 0)) {
+            const b = await withTimeout(ic.takePhoto({ imageWidth: mw, imageHeight: mh }), 6000, 'takePhoto');
+            const bmp = await createImageBitmap(b);
+            if (bmp.width > (cur.width || 0)) {
+              blob = b;
+              w = bmp.width;
+              h = bmp.height;
+            }
+            bmp.close?.();
+          }
+        } catch (e) {
+          log('snapshot: camera photo mode unavailable', errText(e));
+        }
+      }
+      if (!blob) {
+        const caps = t.getCapabilities ? t.getCapabilities() : {};
+        const maxW = caps.width?.max || 0;
+        const maxH = caps.height?.max || 0;
+        const before = t.getConstraints ? t.getConstraints() : {};
+        let raised = false;
+        if (maxW > (cur.width || 0)) {
+          try {
+            await withTimeout(t.applyConstraints({ ...before, width: { ideal: maxW }, height: { ideal: maxH }, frameRate: { ideal: 15 } }), 4000, 'camera resize');
+            raised = true;
+            await new Promise((r) => setTimeout(r, 700)); // let exposure settle at the new size
+          } catch (e) {
+            log('snapshot: camera max size refused', errText(e));
+          }
+        }
+        try {
+          const frame = await this.grab(t);
+          w = frame.width;
+          h = frame.height;
+          const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+          c.getContext('2d').drawImage(frame, 0, 0);
+          frame.close?.();
+          blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.95));
+        } finally {
+          if (raised) t.applyConstraints(before).catch((e) => log('snapshot: camera size restore failed', errText(e)));
+        }
+      }
+      if (!blob) return null;
+      log('snapshot: camera', `${w}x${h}`, `${Math.round(blob.size / 1024)} KB`);
+      const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+      const file = new File([blob], `${S.me} - camera.${ext}`, { type: blob.type || 'image/jpeg' });
+      Object.assign(file, { w, h });
+      return { what: 'face', file };
+    },
+    async grab(t) {
+      if (typeof ImageCapture !== 'undefined') {
+        try {
+          return await withTimeout(new ImageCapture(t).grabFrame(), 3000, 'grabFrame');
+        } catch {}
+      }
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.srcObject = new MediaStream([t]);
+      await v.play();
+      await new Promise((r) => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : setTimeout(r, 200)));
+      const bmp = await createImageBitmap(v);
+      v.pause();
+      v.srcObject = null;
+      return bmp;
+    },
+  };
+
   // ------------------------------------------------------------------ settings
   let previewStream = null;
   async function openSettings() {
@@ -4347,6 +4739,8 @@
     $('#ringVolume').value = Ring.volume();
     $('#hearSelf').checked = false;
     $('#autoHideUi').checked = store.get('autoHideUi', true);
+    $('#snapScreen').checked = store.get('snapScreen', true);
+    Volume.apply();
     $('#readReceipts').checked = store.get('readReceipts', true);
     $('#linkPreviews').checked = store.get('linkPreviews', true);
     $('#msgSound').checked = store.get('msgSound', true);
@@ -4363,6 +4757,12 @@
         $('#openAtLogin').checked = a.openAtLogin;
         $('#openAtLoginLabel').textContent = a.platform === 'darwin' ? 'Open Parley when I log in to my Mac' : 'Start Parley when Windows starts';
         $('#versionText').textContent = `Parley ${a.version}`;
+        if (a.platform === 'darwin' && electron.screenPermission) {
+          const perm = await electron.screenPermission().catch(() => 'unknown');
+          $('#macScreenRow').classList.remove('hidden');
+          $('#macScreenText').textContent = perm === 'granted' ? 'Screen recording: allowed' : 'Screen recording: not allowed (screen sharing won’t work)';
+          $('#macScreenFixBtn').classList.toggle('primary', perm !== 'granted');
+        }
         $('#appSection').classList.toggle('hidden', a.platform === 'linux' && !navigator.webdriver);
       }
       electron.updateStatus?.().then(renderUpdate).catch(() => {});
@@ -4430,8 +4830,8 @@
       return;
     }
     try {
-      const id = $('#camSelect').value;
-      previewStream = await navigator.mediaDevices.getUserMedia({ video: id ? { deviceId: { exact: id } } : true });
+      const t = await getCam($('#camSelect').value);
+      previewStream = new MediaStream([t]);
       $('#previewVideo').srcObject = previewStream;
     } catch {}
   }
@@ -4453,11 +4853,7 @@
       if (Call.state !== 'idle' && Call.audioTrack && !Call.audioTrack._parleyPlaceholder) {
         track = Call.audioTrack;
       } else {
-        const id = $('#micSelect').value;
-        const c = audioConstraints();
-        if (id) c.deviceId = { exact: id };
-        const s = await navigator.mediaDevices.getUserMedia({ audio: c });
-        track = await NoiseFX.process(s.getAudioTracks()[0]);
+        track = await NoiseFX.process(await getMic($('#micSelect').value));
         own = true;
       }
     } catch (e) {
@@ -4548,31 +4944,64 @@
     $('#settings').classList.add('hidden');
     applySpeaker();
     if (Call.state === 'idle' || !Call.pc) return;
-    // Swap devices live during a call
-    if (prefs.mic && prefs.mic !== before.mic) {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() });
-        await Call.setMic(s.getAudioTracks()[0]);
-      } catch {
-        toast('Couldn’t switch microphone.');
-      }
-    }
-    if (prefs.cam && prefs.cam !== before.cam && Call.camOn) {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: videoConstraints() });
-        Call.camTrack?.stop();
-        Call.camTrack = s.getVideoTracks()[0];
-        await Call.swapVideo();
-      } catch {
-        toast('Couldn’t switch camera.');
-      }
-    }
+    // Devices already switch the moment you pick them; this catches anything that didn't.
+    if (prefs.mic && prefs.mic !== before.mic) await Call.switchMic(prefs.mic);
+    if (prefs.cam && prefs.cam !== before.cam) await Call.switchCam(prefs.cam);
+  }
+  // A device picked in Settings is used straight away (and remembered), in or out of a call.
+  function setDevicePref(kind, id) {
+    const prefs = { ...store.get('devices', {}), [kind]: id };
+    store.set('devices', prefs);
+    log('device chosen', kind, id ? String(id).slice(0, 12) : 'default');
   }
   function applySpeaker() {
     const id = store.get('devices', {}).speaker;
     if (!id || !('setSinkId' in HTMLMediaElement.prototype)) return;
-    for (const v of [el.remote, el.media, $('#screenAudio'), $('#ringAudio')]) v.setSinkId(id).catch(() => {});
+    for (const v of [el.remote, el.media, $('#screenAudio'), $('#ringAudio'), $('#hearSelfAudio')]) v.setSinkId(id).catch((e) => log('speaker switch failed', errText(e)));
+    if (Sound.ctx?.setSinkId) Sound.ctx.setSinkId(id).catch(() => {});
   }
+
+  // ------------------------------------------------------------------ call volume (just for you)
+  // "voice" = your friend talking; "shared" = the sound of their screen share or the video you
+  // watch together. 0–100 %, remembered between calls.
+  const Volume = {
+    get(kind) {
+      const v = Number(store.get(kind === 'shared' ? 'sharedVolume' : 'callVolume', 1));
+      return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+    },
+    set(kind, v) {
+      v = Math.min(1, Math.max(0, Number(v) || 0));
+      store.set(kind === 'shared' ? 'sharedVolume' : 'callVolume', v);
+      this.apply();
+    },
+    apply() {
+      const voice = this.get('voice');
+      const shared = this.get('shared');
+      el.remote.volume = voice;
+      $('#screenAudio').volume = shared;
+      if (!Call.mediaUrl) el.media.volume = shared; // your own movie keeps its own slider
+      for (const [id, v] of [['volVoice', voice], ['volShared', shared], ['callVolume', voice], ['sharedVolume', shared]]) {
+        const r = document.getElementById(id);
+        if (r && document.activeElement !== r) r.value = v;
+      }
+      const pct = (v) => `${Math.round(v * 100)}%`;
+      $('#volVoiceText') && ($('#volVoiceText').textContent = pct(voice));
+      $('#volSharedText') && ($('#volSharedText').textContent = pct(shared));
+      const b = $('#volBtn');
+      if (b) {
+        setIcon(b, voice === 0 ? 'volumeOff' : 'volume');
+        b.classList.toggle('off', voice === 0);
+      }
+    },
+    toggle(force) {
+      const pop = $('#volPop');
+      const show = force ?? pop.classList.contains('hidden');
+      pop.classList.toggle('hidden', !show);
+      $('#volBtn').classList.toggle('active', show);
+      $('#volSharedRow').classList.toggle('hidden', !(Call.remoteScreenSound || Call.remoteMediaId));
+      if (show) this.apply();
+    },
+  };
   function setSidebarHidden(hidden) {
     $('#main').classList.toggle('sidebar-hidden', hidden);
     store.set('sidebarHidden', hidden);
@@ -4601,6 +5030,7 @@
     ['Hold Space', 'Talk while you’re muted (let go to mute again)'],
     [`${KEY_MOD}+Shift+O`, 'Camera on / off'],
     [`${KEY_MOD}+Shift+E`, 'Share your screen'],
+    [`${KEY_MOD}+Shift+P`, 'Call snapshot (full-size pictures of both of you)'],
     [`${KEY_MOD}+Shift+H`, 'Hang up'],
     [`${KEY_MOD}+Shift+A`, 'Answer a call (voice)'],
     [`${KEY_MOD}+Shift+S`, 'Answer a call (video)'],
@@ -4631,12 +5061,32 @@
       }
       startMicTest();
     });
-    $('#micSelect').addEventListener('change', () => Call.state === 'idle' && startMicTest());
+    $('#micSelect').addEventListener('change', async (e) => {
+      setDevicePref('mic', e.target.value);
+      if (Call.state !== 'idle') {
+        await Call.switchMic(e.target.value);
+        startMicTest();
+      } else startMicTest();
+    });
+    $('#camSelect').addEventListener('change', async (e) => {
+      setDevicePref('cam', e.target.value);
+      if (Call.state !== 'idle') await Call.switchCam(e.target.value);
+      startPreview();
+    });
+    $('#speakerSelect').addEventListener('change', (e) => {
+      setDevicePref('speaker', e.target.value);
+      applySpeaker();
+      applyHearSelf();
+    });
+    $('#callVolume').addEventListener('input', (e) => Volume.set('voice', e.target.value));
+    $('#sharedVolume').addEventListener('input', (e) => Volume.set('shared', e.target.value));
     $('#hearSelf').addEventListener('change', applyHearSelf);
     $('#qualitySelect').addEventListener('change', (e) => {
       store.set('quality', e.target.value);
       Call.applyQuality();
     });
+    $('#snapScreen').addEventListener('change', (e) => store.set('snapScreen', e.target.checked));
+    $('#macScreenFixBtn').addEventListener('click', () => ScreenFix.open());
     $('#autoHideUi').addEventListener('change', (e) => {
       store.set('autoHideUi', e.target.checked);
       if (!e.target.checked) Idle.reset();
@@ -4762,6 +5212,7 @@
           m: () => inCall && Call.toggleMic(),
           o: () => inCall && Call.toggleCam(),
           e: () => Call.pc && Call.toggleScreen(),
+          p: () => Call.state === 'active' && Snap.take(),
           h: () => inCall && Call.hangup(),
           a: () => Call.state === 'incoming' && Call.accept(false),
           s: () => Call.state === 'incoming' && Call.accept(true),
@@ -5018,7 +5469,11 @@
     $('#mediaFwdBtn').addEventListener('click', () => Call.mediaControl('seek', 10));
     for (const ev of ['play', 'pause', 'ended', 'seeked']) el.media.addEventListener(ev, () => Call.sendMediaState());
     $('#shareStopBtn').addEventListener('click', () => Call.stopScreen());
-    $('#mediaVolume').addEventListener('input', (e) => (el.media.volume = Number(e.target.value)));
+    $('#mediaVolume').addEventListener('input', (e) => {
+      // your own movie: just this slider; your friend's movie: the same as "Shared sound"
+      if (Call.mediaUrl) el.media.volume = Number(e.target.value);
+      else Volume.set('shared', e.target.value);
+    });
     const seek = $('#mediaSeek');
     seek.addEventListener('input', () => {
       const { d } = Call.mediaPos();
@@ -5108,6 +5563,17 @@
     self.addEventListener('pointercancel', sdEnd);
     $('#fullBtn').addEventListener('click', toggleFullscreen);
     $('#miniBtn').addEventListener('click', goMini);
+    $('#snapBtn').addEventListener('click', () => Snap.take());
+    $('#volBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      Volume.toggle();
+    });
+    $('#volVoice').addEventListener('input', (e) => Volume.set('voice', e.target.value));
+    $('#volShared').addEventListener('input', (e) => Volume.set('shared', e.target.value));
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('#volPop').classList.contains('hidden') && !e.target.closest('#volPop, #volBtn')) Volume.toggle(false);
+    });
+    Volume.apply();
     $('#hangupBtn').addEventListener('click', () => Call.hangup());
 
     // Double-click the video for full screen (the whole call, so your friend's camera stays visible).
@@ -5141,7 +5607,7 @@
   }
 
   // Exposed for automated tests only
-  window.__parleyDebug = { S, Call, Mini, Files, Avatars, applyTheme, history, MsgView, Presence, Tray, Previews, openConvo, rememberContact };
+  window.__parleyDebug = { S, Call, Mini, Files, Avatars, applyTheme, history, MsgView, Presence, Tray, Previews, openConvo, rememberContact, Snap, Volume, ScreenFix, getMic };
 
   bind();
   initLogin();

@@ -138,11 +138,18 @@
               <span class="ctl-sep"></span>
               <button class="ctl" id="screenBtn" title="Share your screen" data-icon="screen"></button>
               <button class="ctl" id="watchBtn" title="Watch a video together (or drop a video file here)" data-icon="film"></button>
+              <button class="ctl" id="snapBtn" title="Snapshot: full-size pictures of both your screens and cameras (Ctrl+Shift+P)" data-icon="snap"></button>
               <span class="ctl-sep"></span>
+              <button class="ctl" id="volBtn" title="Call volume (just for you)" data-icon="volume"></button>
               <button class="ctl" id="fullBtn" title="Full screen (double-click the video)" data-icon="fullscreen"></button>
               <button class="ctl" id="miniBtn" title="Mini window" data-icon="mini"></button>
               <button class="ctl danger hangup" id="hangupBtn" title="Hang up" data-icon="hangup"></button>
             </div>
+            <div id="volPop" class="vol-pop hidden">
+              <label>Voice <input type="range" id="volVoice" min="0" max="1" step="0.05" value="1" /><span id="volVoiceText">100%</span></label>
+              <label id="volSharedRow" class="hidden">Shared sound <input type="range" id="volShared" min="0" max="1" step="0.05" value="1" /><span id="volSharedText">100%</span></label>
+            </div>
+            <div id="snapFlash" class="snap-flash"></div>
             <div id="stageDrop" class="stage-drop hidden"><span data-icon="film"></span> Drop a video to watch it together</div>
           </div>
 
@@ -200,6 +207,20 @@
     <div class="modal-card picker-card">
       <h2>Share your screen</h2>
       <p id="pickerNote" class="note hidden"></p>
+      <div id="pickerFix" class="perm-fix hidden">
+        <p><b>macOS isn’t letting Parley record the screen.</b></p>
+        <p class="muted small">After an update, macOS forgets that it trusted Parley, even though the switch in System Settings still looks on. Parley can make macOS ask again.</p>
+        <ol class="small">
+          <li>Press <b>Fix it</b>. If macOS shows a box about screen recording, choose <b>Allow</b> (or <b>Open System Settings</b> and switch Parley on).</li>
+          <li>Press <b>Restart Parley</b>. Your call ends; just call back.</li>
+        </ol>
+        <div class="row tight">
+          <button class="btn primary small" id="pickerFixBtn" type="button">Fix it</button>
+          <button class="btn small" id="pickerOpenPrefs" type="button">Open System Settings</button>
+          <button class="btn small" id="pickerRelaunch" type="button">Restart Parley</button>
+        </div>
+        <p class="muted small" id="pickerFixStatus"></p>
+      </div>
       <label class="check sound-toggle" id="shareSoundField"><input type="checkbox" id="shareSound" checked /> Share computer sound
         <span id="shareSoundHint" class="muted small"></span></label>
       <div id="sourceGrid" class="source-grid"></div>
@@ -252,6 +273,8 @@
       <label>Microphone <select id="micSelect"></select></label>
       <div class="meter" title="Microphone level (after noise removal)"><div id="micMeter"></div></div>
       <label id="speakerField">Speakers <select id="speakerSelect"></select></label>
+      <label>Call volume (your friend’s voice) <input type="range" id="callVolume" min="0" max="1" step="0.05" value="1" /></label>
+      <label>Shared sound volume (their screen share or a video you watch together) <input type="range" id="sharedVolume" min="0" max="1" step="0.05" value="1" /></label>
 
       <label>Background noise removal
         <select id="noiseSelect">
@@ -270,6 +293,7 @@
         </select>
       </label>
       <label class="check"><input type="checkbox" id="autoHideUi" checked /> Hide call buttons when I’m not moving the mouse</label>
+      <label class="check"><input type="checkbox" id="snapScreen" checked /> Call snapshots include my screen (not just my camera)</label>
 
       <h3>Chat</h3>
       <label class="check"><input type="checkbox" id="readReceipts" checked /> Send read receipts (people see “Seen” when you’ve read their messages)</label>
@@ -288,6 +312,10 @@
         <h3>App</h3>
         <label class="check"><input type="checkbox" id="keepRunning" /> Keep Parley running in the background when I close the window</label>
         <label class="check"><input type="checkbox" id="openAtLogin" /> <span id="openAtLoginLabel">Start Parley when my computer starts</span></label>
+        <div class="row tight hidden" id="macScreenRow">
+          <span class="muted small grow" id="macScreenText">Screen sharing</span>
+          <button class="btn small" id="macScreenFixBtn" type="button">Fix screen recording permission</button>
+        </div>
         <div class="row tight">
           <span class="muted small grow" id="versionText"></span>
           <button class="btn small" id="checkUpdatesBtn" type="button">Check for updates</button>
